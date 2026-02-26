@@ -53,7 +53,7 @@ Aliases: `cc` → `claude`, `cx` → `codex`, `gm` → `gemini`. For `pi`, add `
 
 ## Configuration
 
-Persistent settings live in `~/.context-lens/config.toml`. CLI flags always override config file values.
+Persistent settings live in `~/.context-lens/config.toml`. CLI flags always override config file values. The file is not created automatically — create it yourself if you want to set defaults.
 
 ```toml
 # Context Lens configuration
@@ -203,6 +203,37 @@ If you prefer to configure it manually, set `baseUrl` in `~/.pi/agent/models.jso
     "google-gemini-cli": { "baseUrl": "http://localhost:4040/pi" }
   }
 }
+```
+
+### Redaction
+
+The `--redact` flag strips sensitive values from requests before they are written to disk. This is useful if you share captures with others or export LHAR files and want to remove credentials, secrets, or personal data.
+
+Three presets are available:
+
+| Preset | What it removes |
+| :--- | :--- |
+| `secrets` (default) | API keys, tokens, passwords, bearer credentials |
+| `pii` | Secrets plus names, email addresses, phone numbers, IP addresses |
+| `strict` | PII plus any value that looks like it could identify a person or system |
+
+```bash
+context-lens --redact claude          # secrets preset (default)
+context-lens --redact=pii claude      # broader PII removal
+context-lens --redact=strict claude   # maximum removal
+```
+
+Redaction is **reversible by default**: redacted values are stored alongside the capture so they can be rehydrated when you view the session in the UI. To make redaction permanent (one-way), add `--no-rehydrate`:
+
+```bash
+context-lens --redact=strict --no-rehydrate claude
+```
+
+To always redact without typing the flag every time, set it in `~/.context-lens/config.toml`:
+
+```toml
+[proxy]
+redact = "secrets"
 ```
 
 ### OpenCode

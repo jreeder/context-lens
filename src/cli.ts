@@ -488,11 +488,15 @@ if (parsedArgs.commandName === "analyze") {
       }
     }
 
-    // Fill in mitmproxy CA cert path for tools that need HTTPS interception
-    if (toolConfig.needsMitm && childEnv.SSL_CERT_FILE === "") {
+    // Fill in mitmproxy CA cert path for tools that need HTTPS interception.
+    // SSL_CERT_FILE is used by OpenSSL/curl (native binaries).
+    // NODE_EXTRA_CA_CERTS is used by Node.js processes (e.g. Cline).
+    if (toolConfig.needsMitm) {
       const certPath = join(homedir(), ".mitmproxy", "mitmproxy-ca-cert.pem");
       if (fs.existsSync(certPath)) {
-        childEnv.SSL_CERT_FILE = certPath;
+        if (childEnv.SSL_CERT_FILE === "") childEnv.SSL_CERT_FILE = certPath;
+        if (childEnv.NODE_EXTRA_CA_CERTS === "")
+          childEnv.NODE_EXTRA_CA_CERTS = certPath;
       } else {
         console.error(
           `Warning: mitmproxy CA cert not found at ${certPath}. Run 'mitmdump' once to generate it.`,
@@ -1351,7 +1355,9 @@ async function runDoctor(): Promise<number> {
   const configExists = fs.existsSync(configPath);
   info(
     "config file",
-    configExists ? configPath : `not present (${configPath})`,
+    configExists
+      ? configPath
+      : `not present — create ${configPath} to set defaults`,
   );
   if (configExists) {
     const cfg = loadConfig();

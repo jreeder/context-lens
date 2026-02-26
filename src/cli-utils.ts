@@ -76,9 +76,13 @@ const TOOL_CONFIG: Record<string, ToolConfig> = {
     // backend), not directly to api.anthropic.com. Setting ANTHROPIC_BASE_URL
     // has no effect in OAuth mode, so we use mitmproxy to intercept the
     // HTTPS traffic to api.cline.bot and capture the /v1/messages calls.
+    //
+    // Cline is a Node.js process. Node ignores SSL_CERT_FILE and requires
+    // NODE_EXTRA_CA_CERTS to trust the mitmproxy CA certificate.
     childEnv: {
       https_proxy: MITM_PROXY_URL,
-      SSL_CERT_FILE: "", // filled in by cli.ts with mitmproxy CA cert path
+      SSL_CERT_FILE: "", // for any native/curl components
+      NODE_EXTRA_CA_CERTS: "", // filled in by cli.ts with mitmproxy CA cert path
     },
     extraArgs: [],
     serverEnv: {},

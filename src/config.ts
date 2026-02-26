@@ -78,35 +78,47 @@ export function loadConfig(): ContextLensConfig {
 const VALID_REDACT = new Set(["secrets", "pii", "strict"]);
 const VALID_PRIVACY = new Set(["minimal", "standard", "full"]);
 
+type RawSection = {
+  port?: unknown;
+  redact?: unknown;
+  no_rehydrate?: unknown;
+  no_open?: unknown;
+  level?: unknown;
+};
+
+function section(value: unknown): RawSection | null {
+  return typeof value === "object" && value !== null
+    ? (value as RawSection)
+    : null;
+}
+
 function mergeConfig(raw: unknown): ContextLensConfig {
   const cfg = structuredClone(DEFAULTS);
   if (typeof raw !== "object" || raw === null) return cfg;
-  const r = raw as Record<string, unknown>;
+  const r = raw as { proxy?: unknown; ui?: unknown; privacy?: unknown };
 
-  const proxy = r["proxy"];
-  if (typeof proxy === "object" && proxy !== null) {
-    const p = proxy as Record<string, unknown>;
-    if (typeof p["port"] === "number") cfg.proxy.port = p["port"];
-    if (typeof p["redact"] === "string" && VALID_REDACT.has(p["redact"])) {
-      cfg.proxy.redact = p["redact"] as ContextLensConfig["proxy"]["redact"];
+  const proxy = section(r.proxy);
+  if (proxy) {
+    if (typeof proxy.port === "number") cfg.proxy.port = proxy.port;
+    if (typeof proxy.redact === "string" && VALID_REDACT.has(proxy.redact)) {
+      cfg.proxy.redact = proxy.redact as ContextLensConfig["proxy"]["redact"];
     }
-    if (typeof p["no_rehydrate"] === "boolean") {
-      cfg.proxy.noRehydrate = p["no_rehydrate"];
+    if (typeof proxy.no_rehydrate === "boolean") {
+      cfg.proxy.noRehydrate = proxy.no_rehydrate;
     }
   }
 
-  const ui = r["ui"];
-  if (typeof ui === "object" && ui !== null) {
-    const u = ui as Record<string, unknown>;
-    if (typeof u["port"] === "number") cfg.ui.port = u["port"];
-    if (typeof u["no_open"] === "boolean") cfg.ui.noOpen = u["no_open"];
+  const ui = section(r.ui);
+  if (ui) {
+    if (typeof ui.port === "number") cfg.ui.port = ui.port;
+    if (typeof ui.no_open === "boolean") cfg.ui.noOpen = ui.no_open;
   }
 
-  const privacy = r["privacy"];
-  if (typeof privacy === "object" && privacy !== null) {
-    const pv = privacy as Record<string, unknown>;
-    if (typeof pv["level"] === "string" && VALID_PRIVACY.has(pv["level"])) {
-      cfg.privacy.level = pv["level"] as ContextLensConfig["privacy"]["level"];
+  const privacy = section(r.privacy);
+  if (privacy) {
+    if (typeof privacy.level === "string" && VALID_PRIVACY.has(privacy.level)) {
+      cfg.privacy.level =
+        privacy.level as ContextLensConfig["privacy"]["level"];
     }
   }
 
