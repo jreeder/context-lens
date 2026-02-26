@@ -22,7 +22,12 @@ export {
   getContextLimit,
 } from "./core/models.js";
 export { parseContextInfo } from "./core/parse.js";
-export { detectApiFormat, detectProvider } from "./core/routing.js";
+export {
+  detectApiFormat,
+  detectProvider,
+  extractSource,
+  resolveTargetUrl,
+} from "./core/routing.js";
 export { scanSecurity } from "./core/security.js";
 export type {
   AgentPathStep,
