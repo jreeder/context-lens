@@ -39,7 +39,10 @@ This starts the proxy (port 4040), opens the web UI (http://localhost:4041), set
 context-lens --privacy=minimal claude   # minimal|standard|full
 context-lens --no-open codex            # don't auto-open the UI
 context-lens --no-ui -- claude          # proxy only, no UI
-context-lens doctor                     # check ports, certs, background state
+context-lens --redact claude            # strip secrets before capture (reversible)
+context-lens --redact=pii claude        # broader PII redaction
+context-lens --redact --no-rehydrate claude  # one-way redaction
+context-lens doctor                     # check ports, certs, config, background state
 context-lens background start           # start detached proxy + UI
 context-lens background status
 context-lens background stop
@@ -47,6 +50,29 @@ context-lens stop                       # shorthand for background stop
 ```
 
 Aliases: `cc` → `claude`, `cx` → `codex`, `gm` → `gemini`. For `pi`, add `alias cpi='context-lens pi'` to your shell rc.
+
+## Configuration
+
+Persistent settings live in `~/.context-lens/config.toml`. CLI flags always override config file values.
+
+```toml
+# Context Lens configuration
+# ~/.context-lens/config.toml
+
+[proxy]
+# port = 4040
+# redact = "secrets"   # secrets | pii | strict
+# no_rehydrate = false
+
+[ui]
+# port = 4041
+# no_open = false
+
+[privacy]
+# level = "standard"   # minimal | standard | full
+```
+
+Run `context-lens doctor` to see the active config path and current values.
 
 ## Docker
 

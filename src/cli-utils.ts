@@ -71,6 +71,19 @@ const TOOL_CONFIG: Record<string, ToolConfig> = {
     serverEnv: {},
     needsMitm: true,
   },
+  cline: {
+    // Cline with Anthropic OAuth routes through api.cline.bot (their own
+    // backend), not directly to api.anthropic.com. Setting ANTHROPIC_BASE_URL
+    // has no effect in OAuth mode, so we use mitmproxy to intercept the
+    // HTTPS traffic to api.cline.bot and capture the /v1/messages calls.
+    childEnv: {
+      https_proxy: MITM_PROXY_URL,
+      SSL_CERT_FILE: "", // filled in by cli.ts with mitmproxy CA cert path
+    },
+    extraArgs: [],
+    serverEnv: {},
+    needsMitm: true,
+  },
   aider: {
     childEnv: {
       ANTHROPIC_BASE_URL: `${PROXY_URL}/aider`,
@@ -317,6 +330,7 @@ export function formatHelpText(): string {
     "Examples:",
     "  context-lens claude",
     "  context-lens codex",
+    "  context-lens cline",
     "  context-lens opencode",
     "  context-lens gm",
     "  context-lens bryti",
@@ -356,7 +370,8 @@ export function formatHelpText(): string {
     "",
     "Notes:",
     "  - No command starts standalone mode (proxy + analysis/web UI by default).",
-    "  - 'codex' and 'opencode' use mitmproxy for HTTPS interception (requires mitmproxy; install: pipx install mitmproxy).",
+    "  - 'codex', 'cline', and 'opencode' use mitmproxy for HTTPS interception (requires mitmproxy; install: pipx install mitmproxy).",
+    "  - 'cline' with Anthropic OAuth routes through api.cline.bot; mitmproxy intercepts that traffic.",
     "  - 'pi --mitm' uses mitmproxy for full interception, useful for subscription-based models (openai-codex provider).",
     "  - 'doctor' is a local diagnostics command.",
     "  - 'background' manages detached proxy/web-ui processes.",

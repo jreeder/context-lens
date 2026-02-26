@@ -241,6 +241,7 @@ const tipOpts = { delay: { show: 50, hide: 0 }, placement: 'right' as const }
 // ── Source badge colors (reuse from format.ts sourceBadgeClass) ──
 .badge-claude { color: #fb923c; }
 .badge-codex { color: #34d399; }
+.badge-cline { color: #ef4444; }
 .badge-aider { color: var(--accent-blue); }
 .badge-opencode { color: #8b5cf6; }
 .badge-kimi { color: var(--accent-purple); }

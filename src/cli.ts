@@ -16,6 +16,7 @@ import {
   getToolConfig,
   parseCliArgs,
 } from "./cli-utils.js";
+import { loadConfig } from "./config.js";
 import { VERSION } from "./version.generated.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,13 +41,21 @@ if (parsedArgs.showVersion) {
   console.log(VERSION);
   process.exit(0);
 }
-if (parsedArgs.privacyLevel !== undefined) {
-  process.env.CONTEXT_LENS_PRIVACY = parsedArgs.privacyLevel;
+// Load user config — CLI flags take precedence over config file values
+const userConfig = loadConfig();
+
+const privacyLevel = parsedArgs.privacyLevel ?? userConfig.privacy.level;
+if (privacyLevel !== undefined) {
+  process.env.CONTEXT_LENS_PRIVACY = privacyLevel;
 }
-if (parsedArgs.redactPreset !== undefined) {
-  process.env.CONTEXT_LENS_REDACT = parsedArgs.redactPreset;
+
+const redactPreset = parsedArgs.redactPreset ?? userConfig.proxy.redact;
+if (redactPreset !== undefined) {
+  process.env.CONTEXT_LENS_REDACT = redactPreset;
 }
-if (parsedArgs.noRehydrate) {
+
+const noRehydrate = parsedArgs.noRehydrate ?? userConfig.proxy.noRehydrate;
+if (noRehydrate) {
   process.env.CONTEXT_LENS_NO_REHYDRATE = "1";
 }
 if (
@@ -110,7 +119,7 @@ if (parsedArgs.commandName === "analyze") {
 } else {
   const commandName = parsedArgs.commandName;
   const commandArguments = parsedArgs.commandArguments;
-  const noOpen = parsedArgs.noOpen;
+  const noOpen = parsedArgs.noOpen || userConfig.ui.noOpen;
   const noUi = parsedArgs.noUi;
   const useMitm = parsedArgs.useMitm;
 
@@ -1337,6 +1346,20 @@ async function runDoctor(): Promise<number> {
     true,
     lockfileExists ? `${LOCKFILE} present` : `${LOCKFILE} absent`,
   );
+
+  const configPath = join(homedir(), ".context-lens", "config.toml");
+  const configExists = fs.existsSync(configPath);
+  info(
+    "config file",
+    configExists ? configPath : `not present (${configPath})`,
+  );
+  if (configExists) {
+    const cfg = loadConfig();
+    if (cfg.proxy.redact) info("config: redact", cfg.proxy.redact);
+    if (cfg.proxy.noRehydrate) info("config: no_rehydrate", "true");
+    if (cfg.ui.noOpen) info("config: no_open", "true");
+    if (cfg.privacy.level) info("config: privacy", cfg.privacy.level);
+  }
 
   if (hasFailures) {
     console.log("Doctor result: issues found.");
