@@ -24,6 +24,7 @@
   "files": {
     "includes": [
       "src/**",
+      "apps/**",
       "test/**",
       "scripts/**",
       "biome.json",

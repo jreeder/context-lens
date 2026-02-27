@@ -2,7 +2,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { fmtCost, shortModel, sourceBadgeClass } from '@/utils/format'
-import { getExportUrl } from '@/api'
+import { getExportUrl, uploadToContextlensIo } from '@/api'
 import TagEditor from '@/components/TagEditor.vue'
 
 const showTagEditor = ref(false)
@@ -35,6 +35,8 @@ const store = useSessionStore()
 const showExportMenu = ref(false)
 const showResetMenu = ref(false)
 const sessionIdCopied = ref(false)
+const uploading = ref(false)
+const uploadError = ref<string | null>(null)
 
 const isInspector = computed(() => store.view === 'inspector' && !!store.selectedSession)
 
@@ -106,6 +108,27 @@ async function handleExport(format: 'lhar' | 'lhar.json', scope: 'all' | 'sessio
     window.open(url, '_blank')
   }
   showExportMenu.value = false
+}
+
+async function handleUpload(scope: 'all' | 'session') {
+  uploading.value = true
+  uploadError.value = null
+  showExportMenu.value = false
+  const convoId = scope === 'session' ? store.selectedSessionId ?? undefined : undefined
+  try {
+    const result = await uploadToContextlensIo(convoId)
+    const msg = result.stats.total > 0
+      ? `${result.summary}\n\nShare URL copied to clipboard:\n${result.url}`
+      : `No sensitive data found.\n\nShare URL copied to clipboard:\n${result.url}`
+    await navigator.clipboard.writeText(result.url).catch(() => {})
+    alert(msg)
+    window.open(result.url, '_blank')
+  } catch (err) {
+    uploadError.value = (err as Error).message
+    alert(`Upload failed: ${(err as Error).message}`)
+  } finally {
+    uploading.value = false
+  }
 }
 
 function toggleExportMenu() {
@@ -300,6 +323,15 @@ function onSessionIdKeydown(e: KeyboardEvent) {
               <div class="dropdown-sep" />
               <button class="dropdown-item" @click="handleExport('lhar.json', 'session')"><i class="i-carbon-document" /> Session (.lhar.json)</button>
               <button class="dropdown-item" @click="handleExport('lhar', 'session')"><i class="i-carbon-document" /> Session (.lhar)</button>
+            </template>
+            <div class="dropdown-sep" />
+            <button class="dropdown-item dropdown-item--upload" :disabled="uploading" @click="handleUpload('all')">
+              <i class="i-carbon-upload" /> {{ uploading ? 'Uploading…' : 'Share all (contextlens.io)' }}
+            </button>
+            <template v-if="store.selectedSessionId">
+              <button class="dropdown-item dropdown-item--upload" :disabled="uploading" @click="handleUpload('session')">
+                <i class="i-carbon-upload" /> {{ uploading ? 'Uploading…' : 'Share session (contextlens.io)' }}
+              </button>
             </template>
           </div>
         </Transition>
@@ -702,6 +734,21 @@ function onSessionIdKeydown(e: KeyboardEvent) {
 .dropdown-item--danger {
   &:hover {
     color: var(--accent-red);
+  }
+}
+
+.dropdown-item--upload {
+  &:hover {
+    color: var(--accent-blue);
+  }
+
+  &:disabled {
+    color: var(--text-ghost);
+    cursor: default;
+
+    i { color: var(--text-ghost); }
+
+    &:hover { background: none; color: var(--text-ghost); }
   }
 }
 

@@ -50,6 +50,47 @@ export function getExportUrl(format: 'lhar' | 'lhar.json', conversationId?: stri
   return `${BASE}/api/export/${format}${qs ? `?${qs}` : ''}`
 }
 
+// --- contextlens.io upload ---
+
+export interface UploadResult {
+  id: string
+  url: string
+  stats: { total: number; byType: Record<string, number> }
+  summary: string
+}
+
+const CONTEXTLENS_IO_UPLOAD_URL = 'https://contextlens.io/api/upload'
+
+/**
+ * Upload a session's LHAR export to contextlens.io.
+ * Returns the shareable URL and redaction summary on success.
+ */
+export async function uploadToContextlensIo(
+  conversationId?: string,
+): Promise<UploadResult> {
+  // Fetch the LHAR export from the local analysis server.
+  const exportUrl = getExportUrl('lhar.json', conversationId, 'standard')
+  const exportRes = await fetch(exportUrl)
+  if (!exportRes.ok) throw new Error(`Export failed: ${exportRes.status}`)
+  const lharBlob = await exportRes.blob()
+
+  // Upload to contextlens.io.
+  const form = new FormData()
+  form.append('file', lharBlob, conversationId ? `session-${conversationId}.lhar.json` : 'export.lhar.json')
+
+  const uploadRes = await fetch(CONTEXTLENS_IO_UPLOAD_URL, {
+    method: 'POST',
+    body: form,
+  })
+
+  if (!uploadRes.ok) {
+    const err = await uploadRes.json().catch(() => ({ error: uploadRes.statusText })) as { error?: string }
+    throw new Error(err.error ?? `Upload failed: ${uploadRes.status}`)
+  }
+
+  return uploadRes.json() as Promise<UploadResult>
+}
+
 // --- Tags ---
 
 export async function fetchTags(): Promise<TagsResponse> {
