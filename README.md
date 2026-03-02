@@ -101,11 +101,33 @@ ANTHROPIC_BASE_URL=http://localhost:4040/claude claude
 OPENAI_BASE_URL=http://localhost:4040 codex
 ```
 
+### OpenAI-compatible providers
+
+If your tool talks to an OpenAI-compatible endpoint (Ollama, OpenRouter, Together, vLLM, etc.), set `UPSTREAM_OPENAI_URL` so the proxy knows where to forward:
+
+```bash
+docker run -d \
+  -p 4040:4040 -p 4041:4041 \
+  -e CONTEXT_LENS_BIND_HOST=0.0.0.0 \
+  -e UPSTREAM_OPENAI_URL=https://openrouter.ai/api/v1 \
+  -v ~/.context-lens:/root/.context-lens \
+  ghcr.io/larsderidder/context-lens:latest
+```
+
+Then point your tool at the proxy (e.g. `"baseURL": "http://localhost:4040/opencode"`).
+
+For services running on the Docker host (like Ollama), use `host.docker.internal` as the hostname:
+
+```
+UPSTREAM_OPENAI_URL=http://host.docker.internal:11434/v1
+```
+
 ### Environment variables
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `CONTEXT_LENS_BIND_HOST` | `127.0.0.1` | Set to `0.0.0.0` to accept connections from outside the container |
+| `UPSTREAM_OPENAI_URL` | _(auto-detect)_ | Forward OpenAI-format requests to this URL (for Ollama, vLLM, OpenRouter, etc.) |
 | `CONTEXT_LENS_INGEST_URL` | _(file-based)_ | POST captures to a remote URL instead of writing to disk |
 | `CONTEXT_LENS_PRIVACY` | `standard` | Privacy level: `minimal`, `standard`, or `full` |
 | `CONTEXT_LENS_NO_UPDATE_CHECK` | `0` | Set to `1` to skip the npm update check |
