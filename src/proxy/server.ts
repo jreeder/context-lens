@@ -20,6 +20,29 @@ import { createProxy } from "@contextio/proxy";
 import { createCaptureIngestor, createCaptureWriter } from "./capture.js";
 import { loadProxyConfig } from "./config.js";
 
+async function loadRedactPlugin(): Promise<ProxyPlugin | null> {
+  const preset = process.env.CONTEXT_LENS_REDACT;
+  if (!preset) return null;
+  try {
+    const { createRedactPlugin } = await import("@contextio/redact");
+    const reversible = process.env.CONTEXT_LENS_REHYDRATE === "1";
+    const plugin = createRedactPlugin({
+      preset: preset as "secrets" | "pii" | "strict",
+      reversible,
+    });
+    console.log(
+      `🔒 Redaction enabled (preset: ${preset}, ${reversible ? "reversible" : "one-way"})`,
+    );
+    return plugin;
+  } catch (err: unknown) {
+    console.error(
+      "Failed to load redact plugin:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  }
+}
+
 async function loadPluginsFromEnv(): Promise<ProxyPlugin[]> {
   const pluginsEnv = process.env.CONTEXT_LENS_PROXY_PLUGINS;
   if (!pluginsEnv) return [];
@@ -71,6 +94,8 @@ async function loadPluginsFromEnv(): Promise<ProxyPlugin[]> {
 async function main(): Promise<void> {
   const config = loadProxyConfig();
   const plugins = await loadPluginsFromEnv();
+  const redactPlugin = await loadRedactPlugin();
+  if (redactPlugin) plugins.unshift(redactPlugin);
 
   // Add a capture plugin that either writes to disk or POSTs to ingest URL.
   let onCapture: (capture: import("./capture.js").CaptureData) => void;

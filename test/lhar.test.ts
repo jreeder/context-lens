@@ -72,6 +72,7 @@ function makeEntry(overrides: Partial<CapturedEntry> = {}): CapturedEntry {
     costUsd: null,
     healthScore: null,
     securityAlerts: [],
+    outputSecurityAlerts: [],
     ...overrides,
   };
 }

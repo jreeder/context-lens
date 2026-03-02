@@ -625,6 +625,7 @@ const metricDeltas = computed(() => {
 
 <style lang="scss" scoped>
 @use '../styles/mixins' as *;
+@use '../styles/badges';
 
 .compare-view {
   padding: var(--space-4) var(--space-6);
@@ -773,15 +774,7 @@ const metricDeltas = computed(() => {
   flex-shrink: 0;
 }
 
-.badge-claude { background: rgba(251, 146, 60, 0.15); color: #fb923c; }
-.badge-codex { background: rgba(52, 211, 153, 0.15); color: #34d399; }
-.badge-aider { background: rgba(14, 165, 233, 0.15); color: var(--accent-blue); }
-.badge-opencode { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
-.badge-kimi { background: rgba(167, 139, 250, 0.15); color: var(--accent-purple); }
-.badge-pi { background: rgba(167, 139, 250, 0.15); color: var(--accent-purple); }
-.badge-bryti { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
-.badge-gemini { background: rgba(74, 144, 226, 0.15); color: #4a90e2; }
-.badge-unknown { background: var(--bg-raised); color: var(--text-dim); }
+
 
 .lane-model {
   @include mono-text;

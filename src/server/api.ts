@@ -13,6 +13,7 @@ import {
 import type {
   AgentGroup,
   CapturedEntry,
+  Conversation,
   ConversationGroup,
   PrivacyLevel,
 } from "../types.js";
@@ -82,7 +83,7 @@ function buildConversationGroups(store: Store): {
 function buildFullConversation(
   id: string,
   entries: CapturedEntry[],
-  conversations: Map<string, any>,
+  conversations: Map<string, Conversation>,
   store: Store,
 ): ConversationGroup {
   // Sort newest-first (by timestamp descending) for consistent API output.

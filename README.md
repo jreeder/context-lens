@@ -6,7 +6,7 @@
 
 See what's actually filling your context window. Context Lens is a local proxy that captures LLM API calls from your coding tools and shows you a composition breakdown: what percentage is system prompts, tool definitions, conversation history, tool results, thinking blocks. It answers the question every developer asks: "why is this session so expensive?"
 
-Works with Claude Code, Codex, Gemini CLI, Aider, Pi, and anything else that talks to OpenAI/Anthropic/Google APIs. No code changes needed.
+Works with Claude Code, Codex, Gemini CLI, Cline, Aider, Pi, and anything else that talks to OpenAI/Anthropic/Google APIs. No code changes needed.
 
 **Using AI coding tools across a team?** Token costs compound fast when every developer runs agents all day. Context Lens gives you per-session visibility into where the budget goes — which tools, which patterns, which sessions are outliers. Export sessions as [LHAR](docs/LHAR.md) to share and compare. Team dashboards are on the roadmap; if that's relevant for you, [open an issue](https://github.com/larsderidder/context-lens/issues) or watch this repo.
 
@@ -26,6 +26,7 @@ npm install -g context-lens
 context-lens claude
 context-lens codex
 context-lens gemini
+context-lens cline
 context-lens aider --model claude-sonnet-4
 context-lens pi
 context-lens -- python my_agent.py
@@ -39,7 +40,10 @@ This starts the proxy (port 4040), opens the web UI (http://localhost:4041), set
 context-lens --privacy=minimal claude   # minimal|standard|full
 context-lens --no-open codex            # don't auto-open the UI
 context-lens --no-ui -- claude          # proxy only, no UI
-context-lens doctor                     # check ports, certs, background state
+context-lens --redact claude            # strip secrets before capture
+context-lens --redact=pii claude        # broader PII redaction
+context-lens --redact --rehydrate claude  # restore original values in responses
+context-lens doctor                     # check ports, certs, config, background state
 context-lens background start           # start detached proxy + UI
 context-lens background status
 context-lens background stop
@@ -47,6 +51,29 @@ context-lens stop                       # shorthand for background stop
 ```
 
 Aliases: `cc` → `claude`, `cx` → `codex`, `gm` → `gemini`. For `pi`, add `alias cpi='context-lens pi'` to your shell rc.
+
+## Configuration
+
+Persistent settings live in `~/.context-lens/config.toml`. CLI flags always override config file values. The file is not created automatically; create it if you want persistent defaults.
+
+```toml
+# Context Lens configuration
+# ~/.context-lens/config.toml
+
+[proxy]
+# port = 4040
+# redact = "secrets"   # secrets | pii | strict
+# rehydrate = false
+
+[ui]
+# port = 4041
+# no_open = false
+
+[privacy]
+# level = "standard"   # minimal | standard | full
+```
+
+Run `context-lens doctor` to see the active config path and current values.
 
 ## Docker
 
@@ -117,6 +144,7 @@ services:
 | **OpenAI** | Reverse Proxy | ✅ Stable | `OPENAI_BASE_URL` |
 | **Google Gemini** | Reverse Proxy | 🧪 Experimental | `GOOGLE_GEMINI_BASE_URL` |
 | **ChatGPT (Subscription)** | MITM Proxy | ✅ Stable | `https_proxy` |
+| **Cline** | MITM Proxy | ✅ Stable | `https_proxy` + `NODE_EXTRA_CA_CERTS` |
 | **Pi Coding Agent** | Reverse Proxy (temporary per-run config) | ✅ Stable | `PI_CODING_AGENT_DIR` (set by wrapper) |
 | **OpenAI-Compatible** | Reverse Proxy | ✅ Stable | `UPSTREAM_OPENAI_URL` + `OPENAI_BASE_URL` |
 | **Aider / Generic** | Reverse Proxy | ✅ Stable | Detects standard patterns |
@@ -179,6 +207,35 @@ If you prefer to configure it manually, set `baseUrl` in `~/.pi/agent/models.jso
 }
 ```
 
+### Redaction
+
+The `--redact` flag strips sensitive values from requests before they are written to disk, useful when sharing captures or exporting LHAR files.
+
+| Preset | What it removes |
+| :--- | :--- |
+| `secrets` (default) | API keys, tokens, passwords, bearer credentials |
+| `pii` | Secrets plus names, email addresses, phone numbers, IP addresses |
+| `strict` | PII plus any value that looks like it could identify a person or system |
+
+```bash
+context-lens --redact claude          # secrets preset (default)
+context-lens --redact=pii claude      # broader PII removal
+context-lens --redact=strict claude   # maximum removal
+```
+
+Redaction is **one-way by default**: redacted values are permanently removed from captures. To enable reversible redaction (original values stored in memory and restored in responses), add `--rehydrate`:
+
+```bash
+context-lens --redact --rehydrate claude
+```
+
+To always redact, set it in `~/.context-lens/config.toml`:
+
+```toml
+[proxy]
+redact = "secrets"
+```
+
 ### OpenCode
 
 OpenCode connects to multiple providers simultaneously over HTTPS. Use `context-lens opencode` — it routes all traffic through mitmproxy so every provider call is captured regardless of which model is active:
@@ -193,6 +250,17 @@ If you only use OpenCode with a single OpenAI-compatible endpoint (e.g. OpenCode
 ```bash
 UPSTREAM_OPENAI_URL=https://opencode.ai/zen/v1 context-lens -- opencode "prompt"
 ```
+
+### Cline
+
+Cline with Anthropic OAuth routes through `api.cline.bot` rather than `api.anthropic.com`, so `ANTHROPIC_BASE_URL` has no effect. Use mitmproxy to intercept the traffic:
+
+```bash
+pipx install mitmproxy
+context-lens cline
+```
+
+Cline is a Node.js process, so it uses `NODE_EXTRA_CA_CERTS` (not `SSL_CERT_FILE`) to trust the mitmproxy CA certificate. The CLI handles this automatically.
 
 ### OpenAI-Compatible Endpoints
 

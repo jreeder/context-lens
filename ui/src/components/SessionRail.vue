@@ -86,6 +86,7 @@ const tipOpts = { delay: { show: 50, hide: 0 }, placement: 'right' as const }
 
 <style lang="scss" scoped>
 @use '../styles/mixins' as *;
+@use '../styles/badges';
 
 .session-rail {
   width: 78px;
@@ -239,15 +240,7 @@ const tipOpts = { delay: { show: 50, hide: 0 }, placement: 'right' as const }
 }
 
 // ── Source badge colors (reuse from format.ts sourceBadgeClass) ──
-.badge-claude { color: #fb923c; }
-.badge-codex { color: #34d399; }
-.badge-aider { color: var(--accent-blue); }
-.badge-opencode { color: #8b5cf6; }
-.badge-kimi { color: var(--accent-purple); }
-.badge-pi { color: var(--accent-purple); }
-.badge-bryti { color: #fbbf24; }
-.badge-gemini { color: #4a90e2; }
-.badge-unknown { color: var(--text-dim); }
+
 
 // ── Tag indicators ──
 .tile-tags {

@@ -83,10 +83,14 @@ const eventSlots = computed(() => {
     const events = eventsByEntryId.value.get(item.entry.id) || []
     const firstEvent = events[0] || null
     const turnNum = turnNumbers.value[i] || i + 1
+    const plainTitle = firstEvent
+      ? `Turn ${turnNum}: ${events.map((e) => `${e.label}: ${e.detail}`).join(', ')}`
+      : ''
     return {
       entryId: item.entry.id,
       firstEvent,
       title: firstEvent ? markerTitle(events, turnNum) : '',
+      ariaLabel: plainTitle,
     }
   })
 })
@@ -395,10 +399,10 @@ watch(
                   class="event-marker"
                   :class="`event-marker--${slot.firstEvent.type}`"
                   type="button"
-                  :aria-label="slot.title"
-                  v-tooltip="slot.title"
+                  :aria-label="slot.ariaLabel"
+                  v-tooltip="{ content: slot.title, html: true }"
                 >
-                  {{ markerLabel(slot.firstEvent.type) }}
+                  {{ markerLabel(slot.firstEvent) }}
                 </button>
               </div>
             </div>

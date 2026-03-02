@@ -153,10 +153,16 @@ export function detectTimelineEvents(
       if (prevCache !== null && currCache !== null) {
         const delta = currCache - prevCache
         if (Math.abs(delta) >= 0.2) {
+          const prevPct = Math.round(prevCache * 100)
+          const currPct = Math.round(currCache * 100)
+          const direction = delta > 0 ? 'warmed up' : 'invalidated'
+          const consequence = delta > 0
+            ? 'prompt prefix is now stable, fewer tokens re-processed'
+            : 'prompt prefix changed, more tokens re-processed this turn (higher cost)'
           events.push({
             type: 'cache-shift',
-            label: 'Cache shift',
-            detail: `${Math.round(prevCache * 100)}% → ${Math.round(currCache * 100)}% hit rate`,
+            label: delta > 0 ? 'Cache warmed' : 'Cache invalidated',
+            detail: `${prevPct}% to ${currPct}% hit rate. Cache ${direction}: ${consequence}.`,
           })
         }
       }
@@ -191,16 +197,22 @@ export function detectTimelineEvents(
   return map
 }
 
-export function markerLabel(type: TimelineEvent['type']): string {
-  if (type === 'compaction') return 'C'
-  if (type === 'cache-shift') return 'H'
-  if (type === 'subagent-burst') return 'S'
+export function markerLabel(event: TimelineEvent): string {
+  if (event.type === 'compaction') return 'C'
+  if (event.type === 'cache-shift') return event.label === 'Cache warmed' ? '▲' : '▽'
+  if (event.type === 'subagent-burst') return 'S'
   return 'T'
 }
 
 export function markerTitle(events: TimelineEvent[], turnNum: number): string {
-  const summary = events.map((event) => `${event.label}: ${event.detail}`).join(' | ')
-  return `Turn ${turnNum}: ${summary}`
+  if (events.length === 1) {
+    const e = events[0]
+    return `<span class="tip-label">Turn ${turnNum}: ${e.label}</span><span class="tip-detail">${e.detail}</span>`
+  }
+  const lines = events
+    .map((e) => `<span class="tip-label">${e.label}</span><span class="tip-detail">${e.detail}</span>`)
+    .join('')
+  return `<span class="tip-label">Turn ${turnNum}</span>${lines}`
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

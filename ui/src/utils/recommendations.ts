@@ -167,7 +167,7 @@ export function computeRecommendations(
     })
   }
 
-  // Security alerts
+  // Input security alerts
   for (const a of entry.securityAlerts || []) {
     const sev = a.severity === 'high' ? 'high' : a.severity === 'medium' ? 'med' : 'low'
     const where = a.toolName ? `tool result: ${a.toolName}` : `${a.role} message`
@@ -178,6 +178,17 @@ export function computeRecommendations(
       impact: a.severity,
       messageIndex: a.messageIndex,
       highlight: a.match,
+    })
+  }
+
+  // Output security alerts (response scanning)
+  for (const a of entry.outputSecurityAlerts || []) {
+    const sev = a.severity === 'high' ? 'high' : a.severity === 'medium' ? 'med' : 'low'
+    recs.push({
+      severity: sev,
+      title: `⚠ ${a.pattern.replace(/_/g, ' ')} in response`,
+      detail: a.match,
+      impact: a.severity,
     })
   }
 

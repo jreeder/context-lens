@@ -127,13 +127,29 @@ a {
 // ── Fonts ──
 // ── Floating-vue tooltip overrides ──
 .v-popper--theme-tooltip .v-popper__inner {
-  white-space: pre-line;
+  max-width: 260px;
+  white-space: normal;
+  word-break: break-word;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
+  padding: 6px 10px;
+
+  .tip-label {
+    display: block;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 2px;
+  }
+
+  .tip-detail {
+    display: block;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 400;
+  }
 }
 
 // System-native sans (Inter) + monospace (system mono stack).
-// We don't load external fonts — use the system stack for speed and
+// We don't load external fonts; use the system stack for speed and
 // to avoid FOUT. Inter is widely installed; if not, system sans is fine.
 // JetBrains Mono is nice but not worth the loading penalty for a dev tool.

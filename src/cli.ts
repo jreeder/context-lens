@@ -16,6 +16,7 @@ import {
   getToolConfig,
   parseCliArgs,
 } from "./cli-utils.js";
+import { loadConfig } from "./config.js";
 import { VERSION } from "./version.generated.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,8 +41,22 @@ if (parsedArgs.showVersion) {
   console.log(VERSION);
   process.exit(0);
 }
-if (parsedArgs.privacyLevel !== undefined) {
-  process.env.CONTEXT_LENS_PRIVACY = parsedArgs.privacyLevel;
+// Load user config — CLI flags take precedence over config file values
+const userConfig = loadConfig();
+
+const privacyLevel = parsedArgs.privacyLevel ?? userConfig.privacy.level;
+if (privacyLevel !== undefined) {
+  process.env.CONTEXT_LENS_PRIVACY = privacyLevel;
+}
+
+const redactPreset = parsedArgs.redactPreset ?? userConfig.proxy.redact;
+if (redactPreset !== undefined) {
+  process.env.CONTEXT_LENS_REDACT = redactPreset;
+}
+
+const rehydrate = parsedArgs.rehydrate ?? userConfig.proxy.rehydrate;
+if (rehydrate) {
+  process.env.CONTEXT_LENS_REHYDRATE = "1";
 }
 if (
   !parsedArgs.noUpdateCheck &&
@@ -104,7 +119,7 @@ if (parsedArgs.commandName === "analyze") {
 } else {
   const commandName = parsedArgs.commandName;
   const commandArguments = parsedArgs.commandArguments;
-  const noOpen = parsedArgs.noOpen;
+  const noOpen = parsedArgs.noOpen || userConfig.ui.noOpen;
   const noUi = parsedArgs.noUi;
   const useMitm = parsedArgs.useMitm;
 
@@ -274,7 +289,11 @@ if (parsedArgs.commandName === "analyze") {
       proxyProcess.stdout?.on("data", (data: Buffer) => {
         const output = data.toString();
         if (!proxyReady) process.stderr.write(output);
-        if (output.includes("Context Lens Proxy running") && !proxyReady) {
+        if (
+          (output.includes("Context Lens Proxy running") ||
+            output.includes("@contextio/proxy running")) &&
+          !proxyReady
+        ) {
           proxyReady = true;
           checkBothReady();
         }
@@ -473,11 +492,15 @@ if (parsedArgs.commandName === "analyze") {
       }
     }
 
-    // Fill in mitmproxy CA cert path for tools that need HTTPS interception
-    if (toolConfig.needsMitm && childEnv.SSL_CERT_FILE === "") {
+    // Fill in mitmproxy CA cert path for tools that need HTTPS interception.
+    // SSL_CERT_FILE is used by OpenSSL/curl (native binaries).
+    // NODE_EXTRA_CA_CERTS is used by Node.js processes (e.g. Cline).
+    if (toolConfig.needsMitm) {
       const certPath = join(homedir(), ".mitmproxy", "mitmproxy-ca-cert.pem");
       if (fs.existsSync(certPath)) {
-        childEnv.SSL_CERT_FILE = certPath;
+        if (childEnv.SSL_CERT_FILE === "") childEnv.SSL_CERT_FILE = certPath;
+        if (childEnv.NODE_EXTRA_CA_CERTS === "")
+          childEnv.NODE_EXTRA_CA_CERTS = certPath;
       } else {
         console.error(
           `Warning: mitmproxy CA cert not found at ${certPath}. Run 'mitmdump' once to generate it.`,
@@ -1331,6 +1354,22 @@ async function runDoctor(): Promise<number> {
     true,
     lockfileExists ? `${LOCKFILE} present` : `${LOCKFILE} absent`,
   );
+
+  const configPath = join(homedir(), ".context-lens", "config.toml");
+  const configExists = fs.existsSync(configPath);
+  info(
+    "config file",
+    configExists
+      ? configPath
+      : `not present — create ${configPath} to set defaults`,
+  );
+  if (configExists) {
+    const cfg = loadConfig();
+    if (cfg.proxy.redact) info("config: redact", cfg.proxy.redact);
+    if (cfg.proxy.rehydrate) info("config: rehydrate", "true");
+    if (cfg.ui.noOpen) info("config: no_open", "true");
+    if (cfg.privacy.level) info("config: privacy", cfg.privacy.level);
+  }
 
   if (hasFailures) {
     console.log("Doctor result: issues found.");

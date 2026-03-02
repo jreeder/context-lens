@@ -1,6 +1,6 @@
 {
   "name": "context-lens",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "description": "Local HTTP proxy that intercepts LLM API calls and visualizes context windows",
   "main": "dist/proxy/server.js",
@@ -21,6 +21,7 @@
     "dev": "tsc --watch",
     "postbuild": "chmod +x dist/cli.js dist/proxy/server.js dist/analysis/server.js",
     "prepare": "git config core.hooksPath .githooks",
+    "check:pricing": "npx tsx scripts/check-pricing.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "prepublishOnly": "pnpm run build && pnpm run build:ui && node -e \"require('node:fs').accessSync('ui/dist/index.html'); console.log('✓ UI bundle verified')\""
@@ -65,11 +66,13 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@contextio/core": "^0.2.1",
+    "@contextio/core": "^0.2.2",
     "@contextio/proxy": "^0.2.2",
+    "@contextio/redact": "^0.2.0",
     "@hono/node-server": "^1.19.9",
     "hono": "^4.11.9",
     "js-tiktoken": "^1.0.21",
+    "smol-toml": "^1.6.0",
     "valibot": "^1.2.0"
   }
 }

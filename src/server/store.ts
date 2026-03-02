@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { scanOutput } from "@contextio/core";
 import * as v from "valibot";
 import {
   computeAgentKey,
@@ -33,6 +34,7 @@ import type {
   ContentBlock,
   ContextInfo,
   Conversation,
+  OutputAlert,
   PrivacyLevel,
   RequestMeta,
   ResponseData,
@@ -197,6 +199,10 @@ export class Store {
             rawBody: undefined,
             healthScore: projected.healthScore ?? null,
             securityAlerts: projected.securityAlerts || [],
+            outputSecurityAlerts:
+              ((projected as Record<string, unknown>).outputSecurityAlerts as
+                | OutputAlert[]
+                | undefined) || [],
           };
           loadedEntriesBuffer.push(entry);
           if (entry.id > maxId) maxId = entry.id;
@@ -444,6 +450,7 @@ export class Store {
       costUsd,
       healthScore: null,
       securityAlerts: [],
+      outputSecurityAlerts: [],
     };
 
     // Compute health score
@@ -480,6 +487,19 @@ export class Store {
     // Security scanning must happen before compaction strips message content
     const securityResult = scanSecurity(contextInfo);
     entry.securityAlerts = securityResult.alerts;
+
+    // Output (response) scanning: check for jailbreak markers, dangerous code, suspicious URLs
+    const responseText = extractResponseText(responseData);
+    if (responseText) {
+      const outputResult = scanOutput(responseText);
+      entry.outputSecurityAlerts = outputResult.alerts.map((a) => ({
+        severity: a.severity,
+        pattern: a.pattern,
+        match: a.match,
+        offset: a.offset,
+        length: a.length,
+      }));
+    }
 
     // Track response IDs for Responses API chaining (works for both
     // non-streaming JSON and streaming SSE responses)
@@ -728,6 +748,10 @@ export class Store {
    * contentBlocks (which have no base64 data) using the fixed estimateTokens().
    */
   private migrateImageTokenCounts(): number {
+    // Skip if this migration has already completed successfully.
+    const markerPath = path.join(this.dataDir, ".image-token-migrate-done");
+    if (fs.existsSync(markerPath)) return 0;
+
     let migrated = 0;
     const updateTotals = (ci: ContextInfo, messagesTokens: number): void => {
       ci.messagesTokens = messagesTokens;
@@ -774,6 +798,7 @@ export class Store {
         `Migrated ${migrated} entries with inflated image token counts`,
       );
     }
+    this.writeMarker(markerPath);
     return migrated;
   }
 
@@ -899,15 +924,19 @@ export class Store {
       case "image":
         return { type: "image" };
       default: {
-        // Handle thinking blocks and other unknown types; truncate text-like fields
-        const any = b as any;
-        if (any.thinking)
+        // Handle thinking blocks and other unknown types; truncate text-like fields.
+        // Use typed narrowing so this stays correct when new block types are added.
+        const fallback = b as Record<string, unknown>;
+        if (typeof fallback.thinking === "string")
           return {
-            ...any,
-            thinking: any.thinking.slice(0, limit),
-          } as ContentBlock;
-        if (any.text)
-          return { ...any, text: any.text.slice(0, limit) } as ContentBlock;
+            ...fallback,
+            thinking: fallback.thinking.slice(0, limit),
+          } as unknown as ContentBlock;
+        if (typeof fallback.text === "string")
+          return {
+            ...fallback,
+            text: fallback.text.slice(0, limit),
+          } as unknown as ContentBlock;
         return b;
       }
     }
@@ -1102,4 +1131,66 @@ export class Store {
   getAllTags(): Map<string, number> {
     return this.tagsStore.getAllTags();
   }
+}
+
+/**
+ * Extract plain text from a response for output security scanning.
+ * Returns null if the response has no readable text content.
+ */
+function extractResponseText(response: ResponseData): string | null {
+  if (!response) return null;
+
+  // Streaming: raw SSE chunks
+  if (
+    "streaming" in response &&
+    response.streaming &&
+    typeof response.chunks === "string"
+  ) {
+    return response.chunks;
+  }
+
+  // Raw string body
+  if ("raw" in response && typeof response.raw === "string") {
+    return response.raw;
+  }
+
+  // Parsed JSON body — try common response shapes
+  const r = response as Record<string, unknown>;
+
+  // Anthropic: content blocks
+  if (Array.isArray(r.content)) {
+    return (r.content as Array<Record<string, unknown>>)
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text as string)
+      .join("\n");
+  }
+
+  // OpenAI: choices[].message.content
+  if (Array.isArray(r.choices)) {
+    return (r.choices as Array<Record<string, unknown>>)
+      .map((c) => {
+        const msg = c.message as Record<string, unknown> | undefined;
+        return typeof msg?.content === "string" ? msg.content : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  // Gemini: candidates[].content.parts[].text
+  if (Array.isArray(r.candidates)) {
+    return (r.candidates as Array<Record<string, unknown>>)
+      .flatMap((c) => {
+        const content = c.content as Record<string, unknown> | undefined;
+        const parts = content?.parts as
+          | Array<Record<string, unknown>>
+          | undefined;
+        return (
+          parts?.map((p) => (typeof p.text === "string" ? p.text : "")) ?? []
+        );
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return null;
 }

@@ -162,6 +162,14 @@ export interface SecurityAlert {
   length: number;
 }
 
+export interface OutputAlert {
+  severity: 'high' | 'medium' | 'low';
+  pattern: string;
+  match: string;
+  offset: number;
+  length: number;
+}
+
 // --- Response ---
 
 export type ResponseData =
@@ -198,6 +206,7 @@ export interface ProjectedEntry {
   costUsd: number | null;
   healthScore: HealthScore | null;
   securityAlerts: SecurityAlert[];
+  outputSecurityAlerts: OutputAlert[];
   usage: ProjectedUsage | null;
   responseModel: string | null;
   stopReason: string | null;

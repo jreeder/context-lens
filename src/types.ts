@@ -220,6 +220,19 @@ export interface CapturedEntry {
   costUsd: number | null;
   healthScore: HealthScore | null;
   securityAlerts: SecurityAlert[];
+  outputSecurityAlerts?: OutputAlert[];
+}
+
+/** A single finding from output (response) scanning. Mirrors @contextio/core's OutputAlert. */
+export interface OutputAlert {
+  severity: "high" | "medium" | "low";
+  /** Machine-readable pattern identifier (e.g. "ban_substring", "shell_exec") */
+  pattern: string;
+  /** The matched text, truncated to ~120 chars */
+  match: string;
+  /** Character offset in the scanned text */
+  offset: number;
+  length: number;
 }
 
 export type ResponseData =
@@ -281,6 +294,7 @@ export interface ProjectedEntry {
   costUsd: number | null;
   healthScore: HealthScore | null;
   securityAlerts: SecurityAlert[];
+  outputSecurityAlerts?: OutputAlert[];
   usage: ProjectedUsage | null;
   responseModel: string | null;
   stopReason: string | null;

@@ -41,8 +41,24 @@ export function loadProxyConfig(): ProxyConfig {
   const port = parseInt(process.env.CONTEXT_LENS_PROXY_PORT || "4040", 10);
 
   // Do not honor `x-target-url` unless explicitly enabled.
+  // Intended for Docker multi-container setups where the analysis server
+  // sends captures back through the proxy at a known upstream URL.
+  //
+  // WARNING: combining this with a non-loopback bind host lets any client
+  // on the network redirect proxy traffic to arbitrary URLs (SSRF). Only
+  // set both when the proxy is on a private Docker bridge with no external
+  // exposure.
   const allowTargetOverride =
     process.env.CONTEXT_LENS_ALLOW_TARGET_OVERRIDE === "1";
+
+  const loopbackHosts = ["127.0.0.1", "::1", "localhost"];
+  if (allowTargetOverride && !loopbackHosts.includes(bindHost)) {
+    console.warn(
+      "Warning: CONTEXT_LENS_ALLOW_TARGET_OVERRIDE=1 is set with a non-loopback " +
+        `bind host (${bindHost}). Any client that can reach the proxy can redirect ` +
+        "requests to arbitrary URLs. Only use this on a private Docker bridge network.",
+    );
+  }
 
   const captureDir =
     process.env.CONTEXT_LENS_CAPTURE_DIR ||

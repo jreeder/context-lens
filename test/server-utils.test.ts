@@ -64,7 +64,6 @@ describe("server-utils", () => {
         "set-cookie": "s=1",
         "x-target-url": "http://evil",
         "content-type": "application/json",
-        "x-number": 123,
         "x-array": ["a"],
       });
 

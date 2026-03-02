@@ -149,6 +149,14 @@ const SecurityAlertSchema = v.object({
   length: v.number(),
 });
 
+const OutputAlertSchema = v.object({
+  severity: v.picklist(["high", "medium", "low"]),
+  pattern: v.string(),
+  match: v.string(),
+  offset: v.number(),
+  length: v.number(),
+});
+
 // ---------------------------------------------------------------------------
 // Timings
 // ---------------------------------------------------------------------------
@@ -217,6 +225,7 @@ export const EntryLineSchema = v.object({
     costUsd: v.nullable(v.number()),
     healthScore: v.nullable(HealthScoreSchema),
     securityAlerts: v.optional(v.array(SecurityAlertSchema)),
+    outputSecurityAlerts: v.optional(v.array(OutputAlertSchema)),
     usage: v.optional(v.nullable(ProjectedUsageSchema)),
     responseModel: v.optional(v.nullable(v.string())),
     stopReason: v.optional(v.nullable(v.string())),

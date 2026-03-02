@@ -22,6 +22,13 @@ const COMMAND_ALIASES: Record<string, string> = {
 const KNOWN_PRIVACY_LEVELS = ["minimal", "standard", "full"] as const;
 type PrivacyLevel = (typeof KNOWN_PRIVACY_LEVELS)[number];
 
+const KNOWN_REDACT_PRESETS = ["secrets", "pii", "strict"] as const;
+type RedactPreset = (typeof KNOWN_REDACT_PRESETS)[number];
+
+function isRedactPreset(value: string): value is RedactPreset {
+  return (KNOWN_REDACT_PRESETS as readonly string[]).includes(value);
+}
+
 export interface ParsedCliArgs {
   showHelp: boolean;
   showVersion: boolean;
@@ -30,6 +37,8 @@ export interface ParsedCliArgs {
   noUpdateCheck: boolean;
   useMitm: boolean;
   privacyLevel?: string;
+  redactPreset?: RedactPreset;
+  rehydrate?: boolean;
   commandName?: string;
   commandArguments: string[];
   error?: string;
@@ -57,6 +66,23 @@ const TOOL_CONFIG: Record<string, ToolConfig> = {
     childEnv: {
       https_proxy: MITM_PROXY_URL,
       SSL_CERT_FILE: "", // filled in by cli.ts with mitmproxy CA cert path
+    },
+    extraArgs: [],
+    serverEnv: {},
+    needsMitm: true,
+  },
+  cline: {
+    // Cline with Anthropic OAuth routes through api.cline.bot (their own
+    // backend), not directly to api.anthropic.com. Setting ANTHROPIC_BASE_URL
+    // has no effect in OAuth mode, so we use mitmproxy to intercept the
+    // HTTPS traffic to api.cline.bot and capture the /v1/messages calls.
+    //
+    // Cline is a Node.js process. Node ignores SSL_CERT_FILE and requires
+    // NODE_EXTRA_CA_CERTS to trust the mitmproxy CA certificate.
+    childEnv: {
+      https_proxy: MITM_PROXY_URL,
+      SSL_CERT_FILE: "", // for any native/curl components
+      NODE_EXTRA_CA_CERTS: "", // filled in by cli.ts with mitmproxy CA cert path
     },
     extraArgs: [],
     serverEnv: {},
@@ -144,6 +170,8 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
   let noUpdateCheck = false;
   let useMitm = false;
   let privacyLevel: string | undefined;
+  let redactPreset: RedactPreset | undefined;
+  let rehydrate = false;
   let explicitSeparator = false;
   let commandStartIndex = -1;
   for (let i = 0; i < args.length; i++) {
@@ -179,6 +207,31 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
     }
     if (arg === "--mitm") {
       useMitm = true;
+      continue;
+    }
+    if (arg === "--redact") {
+      redactPreset = "secrets";
+      continue;
+    }
+    if (arg === "--rehydrate") {
+      rehydrate = true;
+      continue;
+    }
+    if (arg.startsWith("--redact=")) {
+      const value = arg.split("=", 2)[1];
+      if (!isRedactPreset(value)) {
+        return {
+          showHelp,
+          showVersion,
+          noOpen,
+          noUi,
+          noUpdateCheck,
+          useMitm,
+          commandArguments: [],
+          error: `Error: Invalid redact preset '${value}'. Must be one of: ${KNOWN_REDACT_PRESETS.join(", ")}`,
+        };
+      }
+      redactPreset = value;
       continue;
     }
     if (arg === "--privacy") {
@@ -243,6 +296,8 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
       noUpdateCheck,
       useMitm,
       privacyLevel,
+      redactPreset,
+      rehydrate,
       commandArguments: [],
       error: "Error: No command specified after --",
     };
@@ -256,6 +311,8 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
     noUpdateCheck,
     useMitm,
     privacyLevel,
+    redactPreset,
+    rehydrate,
     commandName,
     commandArguments,
   };
@@ -277,6 +334,7 @@ export function formatHelpText(): string {
     "Examples:",
     "  context-lens claude",
     "  context-lens codex",
+    "  context-lens cline",
     "  context-lens opencode",
     "  context-lens gm",
     "  context-lens bryti",
@@ -297,6 +355,8 @@ export function formatHelpText(): string {
     "  --no-ui                Run proxy only (no analysis/web UI server)",
     "  --no-update-check      Skip npm update check for this run",
     "  --mitm                 Use mitmproxy for interception instead of base URL override (pi only)",
+    "  --redact[=preset]      Strip sensitive data before capture (experimental). Preset: secrets|pii|strict (default: secrets)",
+    "  --rehydrate            With --redact: restore original values in responses (off by default)",
     "",
     "Command aliases:",
     "  cc -> claude",
@@ -314,7 +374,8 @@ export function formatHelpText(): string {
     "",
     "Notes:",
     "  - No command starts standalone mode (proxy + analysis/web UI by default).",
-    "  - 'codex' and 'opencode' use mitmproxy for HTTPS interception (requires mitmproxy; install: pipx install mitmproxy).",
+    "  - 'codex', 'cline', and 'opencode' use mitmproxy for HTTPS interception (requires mitmproxy; install: pipx install mitmproxy).",
+    "  - 'cline' with Anthropic OAuth routes through api.cline.bot; mitmproxy intercepts that traffic.",
     "  - 'pi --mitm' uses mitmproxy for full interception, useful for subscription-based models (openai-codex provider).",
     "  - 'doctor' is a local diagnostics command.",
     "  - 'background' manages detached proxy/web-ui processes.",
