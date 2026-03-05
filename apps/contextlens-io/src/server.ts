@@ -21,6 +21,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { formatStats, redactLhar } from "./redact.js";
+import { S3SessionStorage } from "./storage-s3.js";
 import { SessionStorage } from "./storage.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -68,15 +69,45 @@ setInterval(() => {
   }
 }, RATE_WINDOW_MS);
 
-const storage = new SessionStorage(DATA_DIR);
+// Select storage backend based on environment.
+const useS3 = process.env.STORAGE_BACKEND === "s3";
 
-// Prune expired sessions on startup and then periodically.
-const pruned = storage.prune();
-if (pruned > 0) console.log(`[startup] Pruned ${pruned} expired sessions`);
-setInterval(() => {
-  const n = storage.prune();
-  if (n > 0) console.log(`[prune] Removed ${n} expired sessions`);
-}, PRUNE_INTERVAL_MS);
+interface AsyncStorage {
+  save(content: string): Promise<string>;
+  load(id: string): Promise<{ id: string; createdAt: number; content: string } | null>;
+  prune(): Promise<number>;
+}
+
+function makeStorage(): AsyncStorage {
+  if (useS3) {
+    const s3 = new S3SessionStorage();
+    return {
+      save: (c) => s3.save(c),
+      load: (id) => s3.load(id),
+      prune: async () => s3.prune(),
+    };
+  }
+  const local = new SessionStorage(DATA_DIR);
+  return {
+    save: async (c) => local.save(c),
+    load: async (id) => local.load(id),
+    prune: async () => local.prune(),
+  };
+}
+
+const storage = makeStorage();
+
+// Prune expired sessions on startup and then periodically (local only; S3 uses lifecycle rules).
+if (!useS3) {
+  storage.prune().then((n) => {
+    if (n > 0) console.log(`[startup] Pruned ${n} expired sessions`);
+  });
+  setInterval(() => {
+    storage.prune().then((n) => {
+      if (n > 0) console.log(`[prune] Removed ${n} expired sessions`);
+    });
+  }, PRUNE_INTERVAL_MS);
+}
 
 const app = new Hono();
 
@@ -200,7 +231,7 @@ app.post("/api/upload", async (c) => {
   // Store.
   let id: string;
   try {
-    id = storage.save(redacted);
+    id = await storage.save(redacted);
   } catch (err) {
     return c.json({ error: `Storage failed: ${(err as Error).message}` }, 500);
   }
@@ -221,11 +252,11 @@ app.post("/api/upload", async (c) => {
  * Returns the raw redacted LHAR JSON for a shared session.
  * Called by the viewer iframe to load session data.
  */
-app.get("/s/:id/data", (c) => {
+app.get("/s/:id/data", async (c) => {
   const { id } = c.req.param();
-  let session: ReturnType<typeof storage.load>;
+  let session: Awaited<ReturnType<typeof storage.load>>;
   try {
-    session = storage.load(id);
+    session = await storage.load(id);
   } catch {
     return c.json({ error: "Invalid session ID" }, 400);
   }
@@ -245,13 +276,13 @@ app.get("/s/:id/data", (c) => {
  *
  * Serves the viewer HTML. The viewer fetches /s/:id/data to load the session.
  */
-app.get("/s/:id", (c) => {
+app.get("/s/:id", async (c) => {
   const { id } = c.req.param();
 
   // Quick existence check before serving HTML.
   let exists = false;
   try {
-    exists = storage.load(id) !== null;
+    exists = (await storage.load(id)) !== null;
   } catch {
     return c.html("<h1>Invalid session ID</h1>", 400);
   }
