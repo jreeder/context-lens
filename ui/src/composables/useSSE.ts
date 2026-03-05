@@ -1,7 +1,7 @@
 import { ref, onUnmounted } from 'vue'
 import type { SSEEvent } from '@/api-types'
 
-export function useSSE(url: string, onEvent: (event: SSEEvent) => void) {
+export function useSSE(url: string, onEvent: (event: SSEEvent) => void, options?: { disabled?: boolean }) {
   const connected = ref(false)
   let source: EventSource | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -49,8 +49,8 @@ export function useSSE(url: string, onEvent: (event: SSEEvent) => void) {
     connected.value = false
   }
 
-  // Auto-connect
-  connect()
+  // Auto-connect (skip in shared/viewer mode)
+  if (!options?.disabled) connect()
 
   // Cleanup on component unmount
   onUnmounted(disconnect)

@@ -8,10 +8,11 @@
  * GET  /s/:id/data        - Return raw redacted LHAR JSON for the viewer
  *
  * Environment variables:
- *   PORT         - Listen port (default: 3000)
- *   DATA_DIR     - Session storage directory (default: ./data)
- *   BASE_URL     - Public base URL (default: http://localhost:PORT)
+ *   PORT              - Listen port (default: 3000)
+ *   DATA_DIR          - Session storage directory (default: ./data)
+ *   BASE_URL          - Public base URL (default: http://localhost:PORT)
  *   PRUNE_INTERVAL_MS - How often to prune expired sessions (default: 3600000 = 1h)
+ *   RATE_LIMIT_UPLOADS - Max uploads per IP per hour (default: 10)
  */
 
 import fs from "node:fs";
@@ -26,8 +27,46 @@ const PORT = Number(process.env.PORT ?? 3000);
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
 const BASE_URL = process.env.BASE_URL ?? `http://localhost:${PORT}`;
 const PRUNE_INTERVAL_MS = Number(process.env.PRUNE_INTERVAL_MS ?? 3_600_000);
+const RATE_LIMIT_UPLOADS = Number(process.env.RATE_LIMIT_UPLOADS ?? 10);
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+
+// --- Rate limiter ---
+// Sliding window: tracks upload timestamps per IP, evicts entries older than 1h.
+
+const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+const uploadTimestamps = new Map<string, number[]>();
+
+function getClientIp(req: Request): string {
+  // Respect X-Forwarded-For when running behind a proxy/load balancer.
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return "unknown";
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const cutoff = now - RATE_WINDOW_MS;
+  let timestamps = uploadTimestamps.get(ip) ?? [];
+  // Evict old entries
+  timestamps = timestamps.filter((t) => t > cutoff);
+  if (timestamps.length >= RATE_LIMIT_UPLOADS) {
+    uploadTimestamps.set(ip, timestamps);
+    return true;
+  }
+  timestamps.push(now);
+  uploadTimestamps.set(ip, timestamps);
+  return false;
+}
+
+// Evict IPs with no recent uploads every hour to prevent unbounded growth.
+setInterval(() => {
+  const cutoff = Date.now() - RATE_WINDOW_MS;
+  for (const [ip, timestamps] of uploadTimestamps) {
+    if (timestamps.every((t) => t <= cutoff)) uploadTimestamps.delete(ip);
+  }
+}, RATE_WINDOW_MS);
 
 const storage = new SessionStorage(DATA_DIR);
 
@@ -71,6 +110,14 @@ app.use(
  * }
  */
 app.post("/api/upload", async (c) => {
+  const ip = getClientIp(c.req.raw);
+  if (isRateLimited(ip)) {
+    return c.json(
+      { error: `Rate limit exceeded. Max ${RATE_LIMIT_UPLOADS} uploads per hour per IP.` },
+      429,
+    );
+  }
+
   const contentType = c.req.header("content-type") ?? "";
 
   let raw: string;

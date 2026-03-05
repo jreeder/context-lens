@@ -52,9 +52,12 @@ watch(() => store.view, (newView, oldView) => {
   }
 })
 
+// Detect shared mode synchronously (set by server before Vue mounts)
+const isSharedMode = !!(window as unknown as Record<string, unknown>).__CONTEXTLENS_SHARED_SESSION_URL__
+
 const { connected } = useSSE('/api/events', (event) => {
   store.handleSSEEvent(event)
-})
+}, { disabled: isSharedMode })
 
 watch(connected, (val) => {
   store.connected = val
@@ -213,7 +216,7 @@ onMounted(async () => {
   try {
     store.initializeDensity()
 
-    const sharedUrl = (window as unknown as Record<string, unknown>).__CONTEXTLENS_SHARED_SESSION_URL__ as string | undefined
+    const sharedUrl = isSharedMode ? (window as unknown as Record<string, unknown>).__CONTEXTLENS_SHARED_SESSION_URL__ as string : undefined
     if (sharedUrl) {
       // Shared viewer mode: load from contextlens.io, no SSE or polling
       await store.loadShared(sharedUrl)

@@ -337,7 +337,7 @@ function onSessionIdKeydown(e: KeyboardEvent) {
         </Transition>
       </div>
 
-      <div v-if="hasRequests" class="toolbar-dropdown">
+      <div v-if="hasRequests && !store.isSharedMode" class="toolbar-dropdown">
         <button class="toolbar-control" @click="toggleResetMenu">
           <i class="i-carbon-overflow-menu-horizontal" /> Menu
         </button>
