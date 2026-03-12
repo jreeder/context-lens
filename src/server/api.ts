@@ -7,6 +7,7 @@ import { ingestCapture } from "../analysis/ingest.js";
 import { computeFingerprint, extractSessionId } from "../core/conversation.js";
 import { classifyRequest } from "../core/routing.js";
 import { parseContextInfo } from "../core.js";
+import { importSessions } from "../importers/index.js";
 import { toLharJson, toLharJsonl } from "../lhar.js";
 import {
   IngestCapturePayloadSchema,
@@ -254,6 +255,15 @@ export function createApiApp(store: Store): Hono {
       `  📋 Pasted: [${provider}/${apiFormat}] → session ${latestId}`,
     );
     return c.json({ ok: true, conversationId: latestId });
+  });
+
+  // --- CLI session import ---
+
+  app.post("/api/import/scan", (c) => {
+    const summaries = importSessions(store);
+    const total = summaries.reduce((s, r) => s + r.imported, 0);
+    console.log(`  📂 Import scan complete: ${total} session(s) imported`);
+    return c.json({ ok: true, summaries });
   });
 
   // --- Entry detail ---

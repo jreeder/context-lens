@@ -78,6 +78,9 @@ export class Store {
   private dataRevision = 0;
   private nextEntryId = 1;
 
+  // Tracks CLI session IDs already imported to avoid duplicates across scans
+  private importedSessionIds = new Set<string>();
+
   // SSE change listeners
   private changeListeners = new Set<StoreChangeListener>();
 
@@ -644,11 +647,22 @@ export class Store {
     this.diskSessionsWritten.clear();
     this.responseIdToConvo.clear();
     this.geminiSessionTracker.clear();
+    this.importedSessionIds.clear();
     this.tagsStore.syncTags(new Set());
     this.nextEntryId = 1;
     this.dataRevision++;
     this.emitChange("reset");
     this.saveState();
+  }
+
+  // ----- CLI session import tracking -----
+
+  hasImportedSession(sessionId: string): boolean {
+    return this.importedSessionIds.has(sessionId);
+  }
+
+  markSessionImported(sessionId: string): void {
+    this.importedSessionIds.add(sessionId);
   }
 
   // ----- Internals -----

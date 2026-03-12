@@ -5,8 +5,35 @@ import { fmtCost, shortModel, sourceBadgeClass } from '@/utils/format'
 import { getExportUrl, uploadToContextlensIo } from '@/api'
 import TagEditor from '@/components/TagEditor.vue'
 import PasteModal from '@/components/PasteModal.vue'
+import { scanImport } from '@/api'
 
 const showPasteModal = ref(false)
+const importing = ref(false)
+const importResult = ref<string | null>(null)
+
+async function handleImport() {
+  importing.value = true
+  importResult.value = null
+  showResetMenu.value = false
+  try {
+    const { summaries } = await scanImport()
+    await store.load()
+    const total = summaries.reduce((s, r) => s + r.imported, 0)
+    const details = summaries
+      .filter(s => s.found > 0)
+      .map(s => `${s.source}: ${s.imported} new`)
+      .join(', ')
+    importResult.value = total > 0
+      ? `Imported ${total} session${total !== 1 ? 's' : ''}${details ? ` (${details})` : ''}`
+      : 'No new sessions found'
+    setTimeout(() => { importResult.value = null }, 4000)
+  } catch (err) {
+    importResult.value = err instanceof Error ? err.message : 'Import failed'
+    setTimeout(() => { importResult.value = null }, 4000)
+  } finally {
+    importing.value = false
+  }
+}
 
 const showTagEditor = ref(false)
 const toolbarTagsEl = ref<HTMLElement>()
@@ -368,6 +395,12 @@ function onSessionIdKeydown(e: KeyboardEvent) {
         </button>
         <Transition name="dropdown">
           <div v-if="showResetMenu" class="dropdown-menu" @mouseleave="showResetMenu = false">
+            <button class="dropdown-item" :disabled="importing" @click="handleImport">
+              <i v-if="importing" class="i-carbon-circle-dash spin" />
+              <i v-else class="i-carbon-folder-open" />
+              {{ importing ? 'Scanning…' : 'Import CLI sessions' }}
+            </button>
+            <div class="dropdown-sep" />
             <button class="dropdown-item dropdown-item--danger" @click="handleReset">
               <i class="i-carbon-trash-can" /> Reset all
             </button>
@@ -383,6 +416,10 @@ function onSessionIdKeydown(e: KeyboardEvent) {
         </Transition>
       </div>
     </div>
+
+    <Transition name="import-toast">
+      <div v-if="importResult" class="import-toast">{{ importResult }}</div>
+    </Transition>
   </header>
 
   <Teleport to="body">
@@ -427,6 +464,16 @@ function onSessionIdKeydown(e: KeyboardEvent) {
   gap: var(--space-2);
   z-index: 20;
   height: 44px;
+  position: relative;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
 }
 
 .toolbar-brand {
@@ -804,6 +851,28 @@ function onSessionIdKeydown(e: KeyboardEvent) {
 .dropdown-leave-active { transition: opacity 0.08s, transform 0.08s; }
 .dropdown-enter-from,
 .dropdown-leave-to { opacity: 0; transform: translateY(-4px); }
+
+// ── Import toast ──
+.import-toast {
+  position: absolute;
+  bottom: calc(-100% - 6px);
+  right: var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  z-index: 40;
+}
+
+.import-toast-enter-active { transition: opacity 0.15s, transform 0.15s; }
+.import-toast-leave-active { transition: opacity 0.2s, transform 0.2s; }
+.import-toast-enter-from,
+.import-toast-leave-to { opacity: 0; transform: translateY(-4px); }
 
 // ── Paste modal (teleported) ──
 // (rendered via <Teleport> in template, no scoped styles needed)

@@ -40,6 +40,23 @@ export async function resetAll(): Promise<void> {
   if (!res.ok) throw new Error(`POST /api/reset failed: ${res.status}`)
 }
 
+export interface ImportSummary {
+  source: string
+  found: number
+  imported: number
+  skipped: number
+  errors: number
+}
+
+export async function scanImport(): Promise<{ summaries: ImportSummary[] }> {
+  const res = await fetch(`${BASE}/api/import/scan`, { method: 'POST' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as any).error ?? `POST /api/import/scan failed: ${res.status}`)
+  }
+  return res.json()
+}
+
 export async function pasteRequest(json: string): Promise<{ conversationId: string | null }> {
   let body: unknown
   try {
