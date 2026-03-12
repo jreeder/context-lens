@@ -245,6 +245,206 @@ describe("parseContextInfo", () => {
     });
   });
 
+  describe("anthropic format - array system prompt", () => {
+    it("joins array system blocks into a single systemPrompts entry", () => {
+      const body = {
+        model: "claude-sonnet-4",
+        system: [
+          { type: "text", text: "You are helpful." },
+          { type: "text", text: "Be concise." },
+        ],
+        messages: [{ role: "user", content: "hi" }],
+      };
+      const info = parseContextInfo("anthropic", body, "anthropic-messages");
+      assert.equal(info.systemPrompts.length, 1);
+      assert.ok(info.systemPrompts[0].content.includes("You are helpful."));
+      assert.ok(info.systemPrompts[0].content.includes("Be concise."));
+      assert.ok(info.systemTokens > 0);
+    });
+  });
+
+  describe("gemini format - Code Assist .request wrapper", () => {
+    it("unwraps contents and systemInstruction from .request field", () => {
+      const body = {
+        request: {
+          contents: [
+            { role: "user", parts: [{ text: "Hello from Code Assist" }] },
+          ],
+          systemInstruction: {
+            parts: [{ text: "You are a coding assistant." }],
+          },
+        },
+      };
+      const info = parseContextInfo("gemini", body, "gemini");
+      assert.equal(info.systemPrompts.length, 1);
+      assert.ok(info.systemPrompts[0].content.includes("coding assistant"));
+      assert.equal(info.messages.length, 1);
+      assert.equal(info.messages[0].role, "user");
+      assert.ok(info.messagesTokens > 0);
+    });
+  });
+
+  describe("gemini format - Gemini parts varieties", () => {
+    it("parses functionCall and functionResponse parts", () => {
+      const body = {
+        contents: [
+          {
+            role: "model",
+            parts: [
+              {
+                functionCall: {
+                  name: "web_search",
+                  args: { query: "TypeScript" },
+                },
+              },
+            ],
+          },
+          {
+            role: "user",
+            parts: [
+              {
+                functionResponse: {
+                  name: "web_search",
+                  response: {
+                    output: "TypeScript is a typed superset of JavaScript.",
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const info = parseContextInfo("gemini", body, "gemini");
+      assert.equal(info.messages.length, 2);
+
+      const toolUse = info.messages[0].contentBlocks?.[0] as any;
+      assert.equal(toolUse?.type, "tool_use");
+      assert.equal(toolUse?.name, "web_search");
+      assert.deepEqual(toolUse?.input, { query: "TypeScript" });
+
+      const toolResult = info.messages[1].contentBlocks?.[0] as any;
+      assert.equal(toolResult?.type, "tool_result");
+      assert.ok(toolResult?.content.includes("TypeScript"));
+    });
+
+    it("parses inlineData as image blocks", () => {
+      const body = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: "What is in this image?" },
+              { inlineData: { mimeType: "image/png", data: "base64data" } },
+            ],
+          },
+        ],
+      };
+      const info = parseContextInfo("gemini", body, "gemini");
+      assert.equal(info.messages.length, 1);
+      const imageBlock = info.messages[0].contentBlocks?.find(
+        (b: any) => b.type === "image",
+      );
+      assert.ok(imageBlock, "should have image content block");
+    });
+
+    it("maps model role to assistant", () => {
+      const body = {
+        contents: [
+          { role: "model", parts: [{ text: "I can help with that." }] },
+        ],
+      };
+      const info = parseContextInfo("gemini", body, "gemini");
+      assert.equal(info.messages[0].role, "assistant");
+    });
+
+    it("extracts functionResponse error wrapper as tool result content", () => {
+      const body = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                functionResponse: {
+                  name: "run_command",
+                  response: { error: "command not found: foo" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const info = parseContextInfo("gemini", body, "gemini");
+      const toolResult = info.messages[0].contentBlocks?.[0] as any;
+      assert.equal(toolResult?.type, "tool_result");
+      assert.ok(toolResult?.content.includes("command not found"));
+    });
+
+    it("parses executableCode and codeExecutionResult parts as text", () => {
+      const body = {
+        contents: [
+          {
+            role: "model",
+            parts: [
+              {
+                executableCode: { language: "python", code: "print('hello')" },
+              },
+              {
+                codeExecutionResult: {
+                  outcome: "OUTCOME_OK",
+                  output: "hello\n",
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const info = parseContextInfo("gemini", body, "gemini");
+      assert.equal(info.messages.length, 1);
+      // Both parts should be captured as content blocks
+      const blocks = info.messages[0].contentBlocks ?? [];
+      assert.ok(blocks.length >= 2, "should have at least 2 content blocks");
+    });
+
+    it("includes Gemini tools from functionDeclarations", () => {
+      const body = {
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: "get_weather",
+                description: "Get the current weather",
+              },
+            ],
+          },
+        ],
+        contents: [{ role: "user", parts: [{ text: "What's the weather?" }] }],
+      };
+      const info = parseContextInfo("gemini", body, "gemini");
+      assert.equal(info.tools.length, 1);
+      assert.equal((info.tools[0] as any).name, "get_weather");
+      assert.ok(info.toolsTokens > 0);
+    });
+  });
+
+  describe("totalTokens invariant", () => {
+    it("totalTokens always equals system + tools + messages across formats", () => {
+      const cases = [
+        ["anthropic", anthropicBasic, "anthropic-messages"],
+        ["openai", codexResponses, "responses"],
+        ["openai", openaiChat, "chat-completions"],
+      ] as const;
+
+      for (const [provider, body, format] of cases) {
+        const info = parseContextInfo(provider, body, format);
+        assert.equal(
+          info.totalTokens,
+          info.systemTokens + info.toolsTokens + info.messagesTokens,
+          `${provider}/${format}: totalTokens invariant broken`,
+        );
+      }
+    });
+  });
+
   describe("empty body", () => {
     it("returns zeroed info for empty body", () => {
       const info = parseContextInfo("unknown", {}, "unknown");

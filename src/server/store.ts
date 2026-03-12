@@ -421,7 +421,8 @@ export class Store {
     // Skip cost estimation for error responses (429 rate limits, 5xx errors)
     // since those requests are not billed by the API.
     const httpStatus = meta?.httpStatus ?? null;
-    const isSuccessResponse = httpStatus === null || (httpStatus >= 200 && httpStatus < 300);
+    const isSuccessResponse =
+      httpStatus === null || (httpStatus >= 200 && httpStatus < 300);
     const inputTok = usage.inputTokens || contextInfo.totalTokens;
     const outputTok = usage.outputTokens;
     const costUsd = isSuccessResponse

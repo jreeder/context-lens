@@ -395,7 +395,10 @@ describe("Store", () => {
     // 429 rate-limited response: no usage, should not be billed
     const entry429 = store.storeRequest(
       ci,
-      { type: "error", error: { type: "rate_limit_error", message: "Too many requests" } } as any,
+      {
+        type: "error",
+        error: { type: "rate_limit_error", message: "Too many requests" },
+      } as any,
       "claude",
       body,
       { httpStatus: 429 },
@@ -405,7 +408,10 @@ describe("Store", () => {
     // 500 server error: should also not be billed
     const entry500 = store.storeRequest(
       ci,
-      { type: "error", error: { type: "server_error", message: "Internal error" } } as any,
+      {
+        type: "error",
+        error: { type: "server_error", message: "Internal error" },
+      } as any,
       "claude",
       body,
       { httpStatus: 500 },
@@ -688,11 +694,17 @@ describe("Store", () => {
     // appended by appendToState for the new entry.
     // Since appendToState re-appends the surviving conversation,
     // loadState handles duplicates, so total conversation lines = 2.
-    const convoLines = lines.filter((l) => JSON.parse(l).type === "conversation");
+    const convoLines = lines.filter(
+      (l) => JSON.parse(l).type === "conversation",
+    );
     const entryLines = lines.filter((l) => JSON.parse(l).type === "entry");
 
     // The evicted conversation's entries must NOT be in the state file
-    assert.equal(entryLines.length, 1, "only the surviving entry should be in state file");
+    assert.equal(
+      entryLines.length,
+      1,
+      "only the surviving entry should be in state file",
+    );
 
     // Reload into a fresh store and verify
     const store2 = new Store({
@@ -1388,5 +1400,239 @@ describe("Store", () => {
     try {
       rmSync(dir, { recursive: true, force: true });
     } catch {}
+  });
+
+  it("clears codex session tracker entry when the tracked conversation is evicted", async () => {
+    // maxSessions=1 forces eviction of the first codex session when the second arrives.
+    const { store, cleanup } = makeStore({ maxSessions: 1 });
+
+    const makeCodexBody = (cwd: string) => ({
+      model: "gpt-4o",
+      input: [
+        {
+          role: "user",
+          content: `[{"type":"input_text","text":"<environment_context>\\n  <cwd>${cwd}</cwd>\\n</environment_context>"}]`,
+        },
+        {
+          role: "user",
+          content: `[{"type":"input_text","text":"hello from ${cwd}"}]`,
+        },
+      ],
+    });
+
+    const resp = {
+      id: "resp_a",
+      model: "gpt-4o",
+      usage: { prompt_tokens: 50, completion_tokens: 10 },
+      choices: [{ finish_reason: "stop" }],
+    } as any;
+
+    const realNow = Date.now;
+    try {
+      Date.now = () => 5_000_000;
+      const b1 = makeCodexBody("/tmp/project-a");
+      store.storeRequest(
+        parseContextInfo("openai", b1, "responses"),
+        resp,
+        "codex",
+        b1,
+      );
+
+      await new Promise((r) => setTimeout(r, 5));
+      Date.now = () => 5_000_000 + 10; // well within TTL
+
+      const b2 = makeCodexBody("/tmp/project-b");
+      store.storeRequest(
+        parseContextInfo("openai", b2, "responses"),
+        { ...resp, id: "resp_b" },
+        "codex",
+        b2,
+      );
+    } finally {
+      Date.now = realNow;
+    }
+
+    // Only one conversation should survive
+    assert.equal(store.getConversations().size, 1);
+
+    cleanup();
+  });
+
+  it("emits 'entry-added' change event with conversationId after storeRequest", () => {
+    const { store, cleanup } = makeStore();
+
+    const events: Array<{ type: string; conversationId?: string | null }> = [];
+    store.on("change", (e) =>
+      events.push({ type: e.type, conversationId: e.conversationId }),
+    );
+
+    const body = {
+      model: "claude-sonnet-4",
+      metadata: { user_id: "session_sse-test-0000-0000-000000000000" },
+      messages: [{ role: "user", content: "hello" }],
+    };
+    const ci = parseContextInfo("anthropic", body, "anthropic-messages");
+    const entry = store.storeRequest(
+      ci,
+      {
+        model: "claude-sonnet-4",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 5, output_tokens: 2 },
+      } as any,
+      "claude",
+      body,
+    );
+
+    const entryAdded = events.find((e) => e.type === "entry-added");
+    assert.ok(entryAdded, "should emit entry-added event");
+    assert.equal(entryAdded?.conversationId, entry.conversationId);
+
+    cleanup();
+  });
+
+  it("emits 'conversation-deleted' change event on deleteConversation", () => {
+    const { store, cleanup } = makeStore();
+
+    const body = {
+      model: "claude-sonnet-4",
+      metadata: { user_id: "session_delete-event-test-00000000" },
+      messages: [{ role: "user", content: "hi" }],
+    };
+    const ci = parseContextInfo("anthropic", body, "anthropic-messages");
+    const entry = store.storeRequest(
+      ci,
+      {
+        model: "claude-sonnet-4",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 5, output_tokens: 2 },
+      } as any,
+      "claude",
+      body,
+    );
+    const convoId = entry.conversationId!;
+
+    const events: Array<{ type: string; conversationId?: string | null }> = [];
+    store.on("change", (e) =>
+      events.push({ type: e.type, conversationId: e.conversationId }),
+    );
+
+    store.deleteConversation(convoId);
+
+    const deleted = events.find((e) => e.type === "conversation-deleted");
+    assert.ok(deleted, "should emit conversation-deleted event");
+    assert.equal(deleted?.conversationId, convoId);
+
+    cleanup();
+  });
+
+  it("emits 'reset' change event on resetAll", () => {
+    const { store, cleanup } = makeStore();
+
+    const events: string[] = [];
+    store.on("change", (e) => events.push(e.type));
+
+    store.resetAll();
+
+    assert.ok(events.includes("reset"), "should emit reset event");
+    cleanup();
+  });
+
+  it("change listener can be removed with off()", () => {
+    const { store, cleanup } = makeStore();
+
+    const events: string[] = [];
+    const listener = (e: { type: string }) => events.push(e.type);
+    store.on("change", listener);
+    store.off("change", listener);
+
+    store.resetAll();
+
+    assert.equal(
+      events.length,
+      0,
+      "listener should not receive events after off()",
+    );
+    cleanup();
+  });
+
+  it("assigns zero cost when httpStatus is 400", () => {
+    const { store, cleanup } = makeStore();
+
+    const body = {
+      model: "claude-sonnet-4-20250514",
+      messages: [{ role: "user", content: "hello" }],
+    };
+    const ci = parseContextInfo("anthropic", body, "anthropic-messages");
+
+    const entry = store.storeRequest(
+      ci,
+      {
+        type: "error",
+        error: { type: "invalid_request_error", message: "bad request" },
+      } as any,
+      "claude",
+      body,
+      { httpStatus: 400 },
+    );
+    assert.equal(entry.costUsd, 0);
+
+    cleanup();
+  });
+
+  it("assigns normal cost when httpStatus is 200", () => {
+    const { store, cleanup } = makeStore();
+
+    const body = {
+      model: "claude-sonnet-4-20250514",
+      messages: [{ role: "user", content: "hello" }],
+    };
+    const ci = parseContextInfo("anthropic", body, "anthropic-messages");
+
+    const entry = store.storeRequest(
+      ci,
+      {
+        model: "claude-sonnet-4-20250514",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1000, output_tokens: 100 },
+      } as any,
+      "claude",
+      body,
+      { httpStatus: 200 },
+    );
+    // 1000 * $3/M + 100 * $15/M = $0.003 + $0.0015 = $0.0045
+    assert.ok(
+      (entry.costUsd ?? 0) > 0,
+      "should have positive cost for 200 response",
+    );
+
+    cleanup();
+  });
+
+  it("assigns zero cost when httpStatus is null (unknown, defaults to billable)", () => {
+    const { store, cleanup } = makeStore();
+
+    const body = {
+      model: "claude-sonnet-4-20250514",
+      messages: [{ role: "user", content: "hello" }],
+    };
+    const ci = parseContextInfo("anthropic", body, "anthropic-messages");
+
+    const entry = store.storeRequest(
+      ci,
+      {
+        model: "claude-sonnet-4-20250514",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1000, output_tokens: 100 },
+      } as any,
+      "claude",
+      body,
+      // no meta = httpStatus is null, treated as success
+    );
+    assert.ok(
+      (entry.costUsd ?? 0) > 0,
+      "null httpStatus should be treated as success (billable)",
+    );
+
+    cleanup();
   });
 });

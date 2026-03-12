@@ -120,4 +120,81 @@ describe("estimateCost", () => {
     // Cache tokens should not add cost
     assert.equal(cost, 0.021);
   });
+
+  it("calculates cost for gpt-4.1", () => {
+    // 500K input @ $2/M + 50K output @ $8/M = $1.00 + $0.40 = $1.40
+    const cost = estimateCost("gpt-4.1", 500_000, 50_000);
+    assert.equal(cost, 1.4);
+  });
+
+  it("calculates cost for gpt-4.1-mini", () => {
+    // 1M input @ $0.40/M + 1M output @ $1.60/M = $0.40 + $1.60 = $2.00
+    const cost = estimateCost("gpt-4.1-mini", 1_000_000, 1_000_000);
+    assert.equal(cost, 2.0);
+  });
+
+  it("matches gpt-4.1-mini before gpt-4.1 (specificity ordering)", () => {
+    const miniCost = estimateCost("gpt-4.1-mini", 1_000_000, 0) ?? 0;
+    const fullCost = estimateCost("gpt-4.1", 1_000_000, 0) ?? 0;
+    assert.ok(
+      miniCost < fullCost,
+      "gpt-4.1-mini should be cheaper per token than gpt-4.1",
+    );
+  });
+
+  it("calculates cost for gemini-2.5-pro", () => {
+    // 100K input @ $1.25/M + 10K output @ $10/M = $0.125 + $0.10 = $0.225
+    const cost = estimateCost("gemini-2.5-pro", 100_000, 10_000);
+    assert.equal(cost, 0.225);
+  });
+
+  it("calculates cost for gemini-2.5-flash", () => {
+    // 1M input @ $0.30/M + 100K output @ $2.50/M = $0.30 + $0.25 = $0.55
+    const cost = estimateCost("gemini-2.5-flash", 1_000_000, 100_000);
+    assert.equal(cost, 0.55);
+  });
+
+  it("matches gemini-2.5-flash before gemini-2.5 (specificity ordering)", () => {
+    const flashCost = estimateCost("gemini-2.5-flash", 1_000_000, 0) ?? 0;
+    const proCost = estimateCost("gemini-2.5-pro", 1_000_000, 0) ?? 0;
+    assert.ok(flashCost < proCost, "flash should be cheaper than pro");
+  });
+
+  it("calculates cost for claude-sonnet-4.5", () => {
+    // Same pricing as sonnet-4: $3/M input, $15/M output
+    // 100K input @ $3/M + 10K output @ $15/M = $0.30 + $0.15 = $0.45
+    const cost = estimateCost("claude-sonnet-4.5", 100_000, 10_000);
+    assert.equal(cost, 0.45);
+  });
+
+  it("calculates cost for claude-haiku-4", () => {
+    // $0.80/M input, $4/M output
+    // 1M input @ $0.80/M + 100K output @ $4/M = $0.80 + $0.40 = $1.20
+    const cost = estimateCost("claude-haiku-4", 1_000_000, 100_000);
+    assert.equal(cost, 1.2);
+  });
+});
+
+describe("getContextLimit - extended models", () => {
+  it("returns 1_000_000 for claude-sonnet-4 family", () => {
+    assert.equal(getContextLimit("claude-sonnet-4"), 1_000_000);
+    assert.equal(getContextLimit("claude-sonnet-4.5"), 1_000_000);
+  });
+
+  it("returns 1_047_576 for gpt-4.1 family", () => {
+    assert.equal(getContextLimit("gpt-4.1"), 1_047_576);
+    assert.equal(getContextLimit("gpt-4.1-mini"), 1_047_576);
+    assert.equal(getContextLimit("gpt-4.1-nano"), 1_047_576);
+  });
+
+  it("returns 1_048_576 for gemini-2.5 family", () => {
+    assert.equal(getContextLimit("gemini-2.5-pro"), 1_048_576);
+    assert.equal(getContextLimit("gemini-2.5-flash"), 1_048_576);
+    assert.equal(getContextLimit("gemini-2.0-flash"), 1_048_576);
+  });
+
+  it("returns 200_000 for o3 family", () => {
+    assert.equal(getContextLimit("o3"), 200_000);
+    assert.equal(getContextLimit("o3-mini"), 200_000);
+  });
 });
