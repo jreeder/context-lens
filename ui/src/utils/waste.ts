@@ -155,6 +155,107 @@ function roughCostForTokens(tokens: number, model: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// Single-turn waste (for Overview tab)
+// ---------------------------------------------------------------------------
+
+export interface TurnWasteCategory {
+  id: 'oversized_results' | 'repeated_system' | 'unused_tools' | 'thinking_spill'
+  label: string
+  tokens: number
+  pct: number // fraction of total context (0–1)
+  color: string
+}
+
+export interface TurnWaste {
+  totalTokens: number
+  wasteTokens: number
+  wasteRatio: number   // 0–1
+  categories: TurnWasteCategory[]
+  unusedToolNames: string[]
+}
+
+const CAT_COLORS: Record<string, string> = {
+  oversized_results: '#ef4444',
+  repeated_system:   '#6366f1',
+  unused_tools:      '#f59e0b',
+  thinking_spill:    '#8b5cf6',
+}
+
+/**
+ * Analyse waste for a single turn. Uses only the entry's own composition.
+ * "Repeated system" on turn 0 is zero; on subsequent turns the system prompt
+ * is considered recurring overhead.
+ */
+export function computeTurnWaste(
+  entry: ProjectedEntry,
+  isFirstTurn: boolean,
+  sessionCalledTools: Set<string>,
+): TurnWaste {
+  const comp = entry.composition
+  const total = totalTokens(comp)
+  if (total === 0) return { totalTokens: 0, wasteTokens: 0, wasteRatio: 0, categories: [], unusedToolNames: [] }
+
+  const cats: TurnWasteCategory[] = []
+
+  // Oversized results
+  const resultTok = catTokens(comp, 'tool_results')
+  const oversizedTok = Math.max(0, resultTok - OVERSIZED_RESULT_THRESHOLD)
+  if (oversizedTok > 0) {
+    cats.push({ id: 'oversized_results', label: 'Oversized results', tokens: oversizedTok, pct: oversizedTok / total, color: CAT_COLORS.oversized_results })
+  }
+
+  // Repeated system (everything after turn 0)
+  if (!isFirstTurn) {
+    const sysTok = catTokens(comp, 'system_prompt') + catTokens(comp, 'system_injections')
+    if (sysTok > 0) {
+      cats.push({ id: 'repeated_system', label: 'System overhead', tokens: sysTok, pct: sysTok / total, color: CAT_COLORS.repeated_system })
+    }
+  }
+
+  // Unused tools
+  const defined = definedTools(entry)
+  const unusedNames = [...defined].filter((n) => !sessionCalledTools.has(n))
+  if (unusedNames.length > 0 && defined.size > 0) {
+    const defTok = catTokens(comp, 'tool_definitions')
+    const unusedTok = Math.round(defTok * (unusedNames.length / defined.size))
+    if (unusedTok > 0) {
+      cats.push({ id: 'unused_tools', label: 'Unused tool defs', tokens: unusedTok, pct: unusedTok / total, color: CAT_COLORS.unused_tools })
+    }
+  }
+
+  // Thinking spill
+  const thinkTok = catTokens(comp, 'thinking')
+  const thinkSpill = thinkTok / total > THINKING_SPILL_THRESHOLD
+    ? Math.round(thinkTok - total * THINKING_SPILL_THRESHOLD)
+    : 0
+  if (thinkSpill > 0) {
+    cats.push({ id: 'thinking_spill', label: 'Excess thinking', tokens: thinkSpill, pct: thinkSpill / total, color: CAT_COLORS.thinking_spill })
+  }
+
+  cats.sort((a, b) => b.tokens - a.tokens)
+  const wasteTokens = cats.reduce((s, c) => s + c.tokens, 0)
+
+  return { totalTokens: total, wasteTokens, wasteRatio: wasteTokens / total, categories: cats, unusedToolNames: unusedNames }
+}
+
+/**
+ * Per-turn waste ratio (0–1) for the timeline overlay.
+ * Returns an array aligned with the provided entries (main-agent order).
+ */
+export function computeWasteTimeline(entries: ProjectedEntry[]): number[] {
+  const good = entries.filter((e) => e.httpStatus === null || (e.httpStatus >= 200 && e.httpStatus < 300))
+
+  // Build session-wide called tools
+  const sessionCalled = new Set<string>()
+  for (const e of good) for (const n of calledTools(e)) sessionCalled.add(n)
+
+  return good.map((e, i) => {
+    const tw = computeTurnWaste(e, i === 0, sessionCalled)
+    return tw.wasteRatio
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 

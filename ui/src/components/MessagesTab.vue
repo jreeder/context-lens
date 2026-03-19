@@ -476,6 +476,10 @@ async function showSubagentDetail(entryId: number) {
   detailOpen.value = true
 }
 
+function isOversizedResult(msg: ParsedMessage): boolean {
+  return classifyMessageRole(msg) === 'tool_results' && (msg.tokens || 0) > 8_000
+}
+
 function toolResultName(msg: ParsedMessage): string | null {
   if (classifyMessageRole(msg) !== 'tool_results') return null
   for (const block of msg.contentBlocks || []) {
@@ -915,6 +919,7 @@ watch(
               >
                 <span class="msg-role">{{ item.msg.role === 'user' ? '›' : item.msg.role === 'assistant' ? '‹' : '·' }}</span>
                 <span class="msg-preview">{{ extractPreview(item.msg, toolNameMap) || '(empty)' }}</span>
+                <span v-if="isOversizedResult(item.msg)" class="chrono-badge chrono-badge--oversized" v-tooltip="'Tool result exceeds 8K tokens'">big</span>
                 <span class="msg-tok" :class="{ hot: (item.msg.tokens || 0) > 2000 }">{{ fmtTokens(item.msg.tokens || 0) }}</span>
               </div>
             </div>
@@ -984,6 +989,7 @@ watch(
                   <span class="chrono-cat-dot" :style="{ background: chronoCategoryColor(item.msg) }" />
                   <span class="chrono-type">{{ chronoCategoryLabel(item.msg) }}</span>
                   <span class="chrono-preview">{{ extractPreview(item.msg, toolNameMap) || '(empty)' }}</span>
+                  <span v-if="!item.future && isOversizedResult(item.msg)" class="chrono-badge chrono-badge--oversized" v-tooltip="'Tool result exceeds 8K tokens — may crowd conversation history'">big</span>
                   <span class="chrono-tok" :class="{ hot: !item.future && (item.msg.tokens || 0) > 2000 }">{{ fmtTokens(item.msg.tokens || 0) }}</span>
                 </div>
               </template>
@@ -1352,6 +1358,20 @@ watch(
   flex: 1;
   font-size: var(--text-sm);
   pointer-events: none;
+}
+
+.chrono-badge {
+  @include mono-text;
+  font-size: 9px;
+  padding: 0px 4px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+
+  &--oversized {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--accent-red);
+  }
 }
 
 .chrono-tok {

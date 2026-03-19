@@ -7,13 +7,13 @@ import { computeRecommendations } from '@/utils/recommendations'
 import { calculateContextDiff, projectTurnsRemaining } from '@/utils/timeline'
 import { buildHealthNarrative } from '@/utils/overview'
 import { extractSessionFileAttributions, fileColor, shortFileName, fileDirectory } from '@/utils/files'
-import { computeWasteAnalysis } from '@/utils/waste'
+import { computeTurnWaste } from '@/utils/waste'
 import type { ProjectedEntry } from '@/api-types'
 import CompositionTreemap from './CompositionTreemap.vue'
 import ContextDiffPanel from './ContextDiffPanel.vue'
 import HealthFindings from './HealthFindings.vue'
 import ExplainPanel from './ExplainPanel.vue'
-import WastePanel from './WastePanel.vue'
+
 
 const explainOpen = ref(false)
 const explainSection = ref<'health' | 'composition' | null>(null)
@@ -27,9 +27,23 @@ const store = useSessionStore()
 
 const entry = computed(() => store.selectedEntry)
 const session = computed(() => store.selectedSession)
-const wasteAnalysis = computed(() =>
-  session.value ? computeWasteAnalysis(session.value.entries) : null
-)
+const turnWaste = computed(() => {
+  const e = entry.value
+  if (!e) return null
+  // Session-wide called tools for unused tool detection
+  const sessionCalled = new Set<string>()
+  for (const se of (session.value?.entries ?? [])) {
+    for (const m of se.contextInfo.messages ?? []) {
+      if (!m.contentBlocks) continue
+      for (const b of m.contentBlocks) {
+        const block = b as unknown as Record<string, unknown>
+        if (block.type === 'tool_use' && typeof block.name === 'string') sessionCalled.add(block.name)
+      }
+    }
+  }
+  const isFirst = turnNum.value <= 1
+  return computeTurnWaste(e, isFirst, sessionCalled)
+})
 const chronologicalEntries = computed(() => {
   if (!session.value) return []
   return [...session.value.entries].reverse()
@@ -369,8 +383,39 @@ function handleTreemapFileClick(filePath: string) {
       @recommendation-click="handleRecClick"
     />
 
-    <!-- ═══ Waste Analysis ═══ -->
-    <WastePanel v-if="wasteAnalysis" :waste="wasteAnalysis" />
+    <!-- ═══ Structural Overhead (this turn) ═══ -->
+    <section class="panel panel--overhead" v-if="turnWaste && turnWaste.wasteTokens > 0">
+      <div class="panel-head">
+        <span class="panel-title">Structural Overhead</span>
+        <span class="overhead-ratio" :class="turnWaste.wasteRatio >= 0.5 ? 'rate-high' : turnWaste.wasteRatio >= 0.3 ? 'rate-med' : 'rate-low'">
+          {{ Math.round(turnWaste.wasteRatio * 100) }}% this turn
+        </span>
+      </div>
+      <div class="overhead-bar-wrap">
+        <div class="overhead-bar">
+          <div v-for="cat in turnWaste.categories" :key="cat.id"
+            class="overhead-seg"
+            :style="{ width: `${Math.round(cat.pct * 100)}%`, background: cat.color }"
+            :title="`${cat.label}: ${fmtTokens(cat.tokens)}`"
+          />
+          <div class="overhead-seg overhead-seg--useful"
+            :style="{ width: `${Math.max(0, 100 - Math.round(turnWaste.wasteRatio * 100))}%` }"
+            title="Useful context"
+          />
+        </div>
+      </div>
+      <div class="overhead-cats">
+        <div v-for="cat in turnWaste.categories" :key="cat.id" class="overhead-cat">
+          <span class="overhead-dot" :style="{ background: cat.color }" />
+          <span class="overhead-name">{{ cat.label }}</span>
+          <span class="overhead-tok">{{ fmtTokens(cat.tokens) }}</span>
+          <span class="overhead-pct">{{ Math.round(cat.pct * 100) }}%</span>
+        </div>
+        <div v-if="turnWaste.unusedToolNames.length" class="overhead-unused">
+          Unused: {{ turnWaste.unusedToolNames.slice(0, 4).join(', ') }}{{ turnWaste.unusedToolNames.length > 4 ? ` +${turnWaste.unusedToolNames.length - 4}` : '' }}
+        </div>
+      </div>
+    </section>
 
     <!-- ═══ Context Diff ═══ -->
     <ContextDiffPanel
@@ -881,5 +926,101 @@ function handleTreemapFileClick(filePath: string) {
   height: 100%;
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+// ── Structural overhead panel ──
+.panel--overhead {
+  position: relative;
+  border-left: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent-amber);
+    pointer-events: none;
+  }
+}
+
+.overhead-ratio {
+  @include mono-text;
+  font-size: var(--text-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+
+  &.rate-low  { background: rgba(16, 185, 129, 0.1); color: #6ee7b7; }
+  &.rate-med  { background: rgba(245, 158, 11, 0.1);  color: #fbbf24; }
+  &.rate-high { background: rgba(239, 68, 68, 0.08);  color: #fca5a5; }
+}
+
+.overhead-bar-wrap {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.overhead-bar {
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-sunken);
+  display: flex;
+  gap: 1px;
+}
+
+.overhead-seg {
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  min-width: 2px;
+
+  &--useful { background: var(--border-mid); }
+}
+
+.overhead-cats {
+  padding: var(--space-2) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.overhead-cat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.overhead-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.overhead-name {
+  @include sans-text;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.overhead-tok {
+  @include mono-text;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.overhead-pct {
+  @include mono-text;
+  font-size: var(--text-xs);
+  color: var(--text-ghost);
+  width: 28px;
+  text-align: right;
+}
+
+.overhead-unused {
+  @include sans-text;
+  font-size: var(--text-xs);
+  color: var(--text-ghost);
+  margin-top: var(--space-1);
 }
 </style>
