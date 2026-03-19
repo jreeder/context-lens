@@ -7,11 +7,13 @@ import { computeRecommendations } from '@/utils/recommendations'
 import { calculateContextDiff, projectTurnsRemaining } from '@/utils/timeline'
 import { buildHealthNarrative } from '@/utils/overview'
 import { extractSessionFileAttributions, fileColor, shortFileName, fileDirectory } from '@/utils/files'
+import { computeWasteAnalysis } from '@/utils/waste'
 import type { ProjectedEntry } from '@/api-types'
 import CompositionTreemap from './CompositionTreemap.vue'
 import ContextDiffPanel from './ContextDiffPanel.vue'
 import HealthFindings from './HealthFindings.vue'
 import ExplainPanel from './ExplainPanel.vue'
+import WastePanel from './WastePanel.vue'
 
 const explainOpen = ref(false)
 const explainSection = ref<'health' | 'composition' | null>(null)
@@ -25,6 +27,9 @@ const store = useSessionStore()
 
 const entry = computed(() => store.selectedEntry)
 const session = computed(() => store.selectedSession)
+const wasteAnalysis = computed(() =>
+  session.value ? computeWasteAnalysis(session.value.entries) : null
+)
 const chronologicalEntries = computed(() => {
   if (!session.value) return []
   return [...session.value.entries].reverse()
@@ -363,6 +368,9 @@ function handleTreemapFileClick(filePath: string) {
       :audit-tooltip="auditTooltip"
       @recommendation-click="handleRecClick"
     />
+
+    <!-- ═══ Waste Analysis ═══ -->
+    <WastePanel v-if="wasteAnalysis" :waste="wasteAnalysis" />
 
     <!-- ═══ Context Diff ═══ -->
     <ContextDiffPanel

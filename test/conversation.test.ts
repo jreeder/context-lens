@@ -376,6 +376,27 @@ describe("extractSessionId", () => {
     assert.equal(extractSessionId({}), null);
     assert.equal(extractSessionId(null), null);
   });
+
+  it("extracts Gemini Code Assist session_id from request wrapper", () => {
+    const raw = {
+      request: {
+        session_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      },
+    };
+    assert.equal(
+      extractSessionId(raw),
+      "gemini_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    );
+  });
+
+  it("returns null for non-string Gemini session_id", () => {
+    const raw = {
+      request: {
+        session_id: 12345,
+      },
+    };
+    assert.equal(extractSessionId(raw), null);
+  });
 });
 
 describe("computeFingerprint", () => {

@@ -460,6 +460,50 @@ describe("normalizeComposition", () => {
     normalizeComposition(comp, 0); // should not throw or divide by zero
     assert.equal(comp.length, 1);
   });
+
+  it("handles zero rawSum (all token counts are 0)", () => {
+    const comp: CompositionEntry[] = [
+      { category: "system_prompt", tokens: 0, pct: 0, count: 1 },
+      { category: "user_text", tokens: 0, pct: 0, count: 1 },
+    ];
+    // Should not divide by zero or throw
+    normalizeComposition(comp, 100);
+    // Tokens unchanged (guard returns early)
+    assert.equal(comp[0].tokens, 0);
+    assert.equal(comp[1].tokens, 0);
+  });
+
+  it("recomputes pct when sum already matches authoritative", () => {
+    // Sum=100 === authoritative=100, but pct fields are stale (0)
+    const comp: CompositionEntry[] = [
+      { category: "system_prompt", tokens: 60, pct: 0, count: 1 },
+      { category: "user_text", tokens: 40, pct: 0, count: 1 },
+    ];
+    normalizeComposition(comp, 100);
+    // Tokens unchanged, pct should be updated
+    assert.equal(comp[0].tokens, 60);
+    assert.equal(comp[1].tokens, 40);
+    assert.equal(comp[0].pct, 60);
+    assert.equal(comp[1].pct, 40);
+  });
+
+  it("sum invariant holds for many rounding-heavy targets", () => {
+    // Exhaustive: 3 entries with prime-ish values, 200 different authoritative targets
+    for (let auth = 1; auth <= 200; auth++) {
+      const comp: CompositionEntry[] = [
+        { category: "system_prompt", tokens: 31, pct: 0, count: 1 },
+        { category: "tool_definitions", tokens: 29, pct: 0, count: 1 },
+        { category: "user_text", tokens: 40, pct: 0, count: 1 },
+      ];
+      normalizeComposition(comp, auth);
+      const sum = comp.reduce((s, c) => s + c.tokens, 0);
+      assert.equal(
+        sum,
+        auth,
+        `sum (${sum}) !== authoritative (${auth}) at target ${auth}`,
+      );
+    }
+  });
 });
 
 // --- parseResponseUsage ---
@@ -549,6 +593,96 @@ describe("parseResponseUsage", () => {
     const usage = parseResponseUsage({ raw: "not json" });
     assert.equal(usage.inputTokens, 0);
     assert.equal(usage.outputTokens, 0);
+  });
+
+  it("parses Gemini direct usageMetadata response", () => {
+    const resp = {
+      modelVersion: "gemini-2.0-flash",
+      usageMetadata: {
+        promptTokenCount: 200,
+        candidatesTokenCount: 40,
+        cachedContentTokenCount: 50,
+      },
+      candidates: [{ finishReason: "STOP" }],
+    };
+    const usage = parseResponseUsage(resp);
+    // promptTokenCount already includes cachedContentTokenCount; subtract to get raw input
+    assert.equal(usage.inputTokens, 150); // 200 - 50
+    assert.equal(usage.outputTokens, 40);
+    assert.equal(usage.cacheReadTokens, 50);
+    assert.equal(usage.model, "gemini-2.0-flash");
+    assert.deepEqual(usage.finishReasons, ["STOP"]);
+  });
+
+  it("parses Gemini Code Assist wrapper (response.usageMetadata)", () => {
+    // Code Assist wraps the response inside a .response field
+    const resp = {
+      response: {
+        modelVersion: "gemini-2.0-flash",
+        usageMetadata: {
+          promptTokenCount: 300,
+          candidatesTokenCount: 60,
+          cachedContentTokenCount: 0,
+        },
+        candidates: [{ finishReason: "STOP" }],
+      },
+    };
+    const usage = parseResponseUsage(resp);
+    assert.equal(usage.inputTokens, 300);
+    assert.equal(usage.outputTokens, 60);
+    assert.equal(usage.cacheReadTokens, 0);
+    assert.equal(usage.model, "gemini-2.0-flash");
+    assert.deepEqual(usage.finishReasons, ["STOP"]);
+  });
+
+  it("parses Anthropic thinking_tokens from usage", () => {
+    const resp = {
+      model: "claude-sonnet-4-20250514",
+      stop_reason: "end_turn",
+      usage: {
+        input_tokens: 500,
+        output_tokens: 100,
+        thinking_tokens: 800,
+      },
+    };
+    const usage = parseResponseUsage(resp);
+    assert.equal(usage.thinkingTokens, 800);
+    assert.equal(usage.inputTokens, 500);
+    assert.equal(usage.outputTokens, 100);
+  });
+
+  it("parses streaming Gemini usageMetadata chunks", () => {
+    const chunks = [
+      'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":5,"cachedContentTokenCount":20},"modelVersion":"gemini-2.0-flash"}',
+    ].join("\n");
+    const usage = parseResponseUsage({ streaming: true, chunks });
+    assert.equal(usage.stream, true);
+    assert.equal(usage.inputTokens, 80); // 100 - 20
+    assert.equal(usage.outputTokens, 5);
+    assert.equal(usage.cacheReadTokens, 20);
+    assert.equal(usage.model, "gemini-2.0-flash");
+  });
+
+  it("parses streaming OpenAI response with usage+choices in final chunk", () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hello"}}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":80,"completion_tokens":20}}',
+      "data: [DONE]",
+    ].join("\n");
+    const usage = parseResponseUsage({ streaming: true, chunks });
+    assert.equal(usage.stream, true);
+    assert.equal(usage.inputTokens, 80);
+    assert.equal(usage.outputTokens, 20);
+    assert.deepEqual(usage.finishReasons, ["stop"]);
+  });
+
+  it("ignores [DONE] sentinel in streaming chunks", () => {
+    const chunks = [
+      'data: {"type":"message_start","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":50}}}',
+      "data: [DONE]",
+    ].join("\n");
+    const usage = parseResponseUsage({ streaming: true, chunks });
+    assert.equal(usage.inputTokens, 50);
   });
 });
 
