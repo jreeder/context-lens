@@ -919,8 +919,7 @@ watch(
               >
                 <span class="msg-role">{{ item.msg.role === 'user' ? '›' : item.msg.role === 'assistant' ? '‹' : '·' }}</span>
                 <span class="msg-preview">{{ extractPreview(item.msg, toolNameMap) || '(empty)' }}</span>
-                <span v-if="isOversizedResult(item.msg)" class="chrono-badge chrono-badge--oversized" v-tooltip="'Tool result exceeds 8K tokens'">big</span>
-                <span class="msg-tok" :class="{ hot: (item.msg.tokens || 0) > 2000 }">{{ fmtTokens(item.msg.tokens || 0) }}</span>
+                <span class="msg-tok" :class="{ hot: (item.msg.tokens || 0) > 2000, oversized: isOversizedResult(item.msg) }" v-tooltip="isOversizedResult(item.msg) ? 'Tool result exceeds 8K tokens — re-sent every turn' : undefined">{{ fmtTokens(item.msg.tokens || 0) }}</span>
               </div>
             </div>
           </div>
@@ -989,8 +988,7 @@ watch(
                   <span class="chrono-cat-dot" :style="{ background: chronoCategoryColor(item.msg) }" />
                   <span class="chrono-type">{{ chronoCategoryLabel(item.msg) }}</span>
                   <span class="chrono-preview">{{ extractPreview(item.msg, toolNameMap) || '(empty)' }}</span>
-                  <span v-if="!item.future && isOversizedResult(item.msg)" class="chrono-badge chrono-badge--oversized" v-tooltip="'Tool result exceeds 8K tokens — may crowd conversation history'">big</span>
-                  <span class="chrono-tok" :class="{ hot: !item.future && (item.msg.tokens || 0) > 2000 }">{{ fmtTokens(item.msg.tokens || 0) }}</span>
+                  <span class="chrono-tok" :class="{ hot: !item.future && (item.msg.tokens || 0) > 2000, oversized: !item.future && isOversizedResult(item.msg) }" v-tooltip="!item.future && isOversizedResult(item.msg) ? 'Tool result exceeds 8K tokens — re-sent every turn, crowding conversation history' : undefined">{{ fmtTokens(item.msg.tokens || 0) }}</span>
                 </div>
               </template>
             </div>
@@ -1281,7 +1279,8 @@ watch(
   flex-shrink: 0;
   pointer-events: none;
 
-  &.hot { color: var(--accent-amber); }
+  &.hot      { color: var(--accent-amber); }
+  &.oversized { color: var(--accent-red); font-weight: 600; }
 }
 
 // ── Chronological view ──
@@ -1360,20 +1359,6 @@ watch(
   pointer-events: none;
 }
 
-.chrono-badge {
-  @include mono-text;
-  font-size: 9px;
-  padding: 0px 4px;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-  letter-spacing: 0.02em;
-
-  &--oversized {
-    background: rgba(239, 68, 68, 0.12);
-    color: var(--accent-red);
-  }
-}
-
 .chrono-tok {
   @include mono-text;
   color: var(--text-ghost);
@@ -1382,7 +1367,8 @@ watch(
   flex-shrink: 0;
   pointer-events: none;
 
-  &.hot { color: var(--accent-amber); }
+  &.hot      { color: var(--accent-amber); }
+  &.oversized { color: var(--accent-red); font-weight: 600; }
 }
 
 // ── Turn boundary markers ──
