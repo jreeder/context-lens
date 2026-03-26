@@ -11,9 +11,9 @@
  * - everything  → "{role}:{index}" (position in messages array)
  */
 
-import type { ProxyPlugin, RequestContext } from "@contextio/core";
-import * as http from "node:http";
 import { createHash } from "node:crypto";
+import * as http from "node:http";
+import type { ProxyPlugin, RequestContext } from "@contextio/core";
 
 // ---------------------------------------------------------------------------
 // Message identity — index-based, no hashing
@@ -72,7 +72,10 @@ async function fetchPrunedMessages(
       },
     );
     req.on("error", () => resolve([]));
-    req.on("timeout", () => { req.destroy(); resolve([]); });
+    req.on("timeout", () => {
+      req.destroy();
+      resolve([]);
+    });
   });
 }
 
@@ -114,10 +117,13 @@ export function createPrunePlugin(analysisUrl: string): ProxyPlugin {
 
       console.log(
         `[prune] Removed ${originalCount - filtered.length} pruned message(s) ` +
-        `from conversation ${conversationId}`,
+          `from conversation ${conversationId}`,
       );
 
-      const newBody = { ...body, messages: filtered } as import("@contextio/core").JsonValue;
+      const newBody = {
+        ...body,
+        messages: filtered,
+      } as import("@contextio/core").JsonValue;
       return { ...ctx, body: newBody };
     },
   };

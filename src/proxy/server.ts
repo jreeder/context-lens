@@ -118,9 +118,7 @@ async function main(): Promise<void> {
   // Reads from the analysis server; runs only when an analysis URL is known.
   const analysisUrl =
     process.env.CONTEXT_LENS_ANALYSIS_URL ||
-    (config.ingestUrl
-      ? new URL(config.ingestUrl).origin
-      : null);
+    (config.ingestUrl ? new URL(config.ingestUrl).origin : null);
   const prunePlugin = analysisUrl ? createPrunePlugin(analysisUrl) : null;
   if (prunePlugin) {
     plugins.unshift(prunePlugin);

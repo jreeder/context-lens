@@ -98,7 +98,10 @@ if (parsedArgs.commandName === "analyze") {
     const analysisPath = join(__dirname, "analysis", "server.js");
     const proxy = spawn("node", [proxyPath], {
       stdio: "inherit",
-      env: { ...process.env, CONTEXT_LENS_ANALYSIS_URL: "http://localhost:4041" },
+      env: {
+        ...process.env,
+        CONTEXT_LENS_ANALYSIS_URL: "http://localhost:4041",
+      },
     });
     const analysis = spawn("node", [analysisPath], {
       stdio: "inherit",
@@ -664,7 +667,10 @@ if (parsedArgs.commandName === "analyze") {
     return resolve(baseDir, pkg);
   }
 
-  function preparePiAgentDir(targetDirEnv: string | undefined, sessionTag?: string): string {
+  function preparePiAgentDir(
+    targetDirEnv: string | undefined,
+    sessionTag?: string,
+  ): string {
     const dirPrefix =
       targetDirEnv && targetDirEnv.length > 0
         ? targetDirEnv
@@ -781,7 +787,10 @@ if (parsedArgs.commandName === "analyze") {
       // Pi uses the built-in anthropic provider by default and it may not appear
       // in models.json at all, so we must always inject it.
       if (!providers.anthropic) {
-        providers.anthropic = { baseUrl: proxyBaseUrl, api: "anthropic-messages" };
+        providers.anthropic = {
+          baseUrl: proxyBaseUrl,
+          api: "anthropic-messages",
+        };
       } else {
         const ap = providers.anthropic as Record<string, unknown>;
         if (!String(ap.baseUrl ?? "").startsWith("http://localhost")) {
@@ -1207,7 +1216,7 @@ async function backgroundStart(noUi: boolean): Promise<number> {
 
   const proxyPath = join(__dirname, "proxy", "server.js");
   const proxyEnv: Record<string, string> = {
-    ...process.env as Record<string, string>,
+    ...(process.env as Record<string, string>),
     CONTEXT_LENS_CLI: "1",
     ...(noUi ? {} : { CONTEXT_LENS_ANALYSIS_URL: "http://localhost:4041" }),
   };

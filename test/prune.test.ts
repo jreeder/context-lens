@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import * as http from "node:http";
-import { describe, it, afterEach } from "node:test";
-import { createPrunePlugin } from "../src/proxy/prune.js";
+import { afterEach, describe, it } from "node:test";
 import type { RequestContext } from "@contextio/core";
+import { createPrunePlugin } from "../src/proxy/prune.js";
 
 // ---------------------------------------------------------------------------
 // Mock analysis server — responds to GET /api/sessions/:id/prunes
 // ---------------------------------------------------------------------------
 
 let mockServer: http.Server | null = null;
-let mockPrunes: Map<string, string[]> = new Map();
+const mockPrunes: Map<string, string[]> = new Map();
 
 async function startMockServer(): Promise<number> {
   return new Promise((resolve) => {
@@ -48,7 +48,10 @@ function stopMockServer(): Promise<void> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeCtx(sessionId: string | null, messages: unknown[]): RequestContext {
+function makeCtx(
+  sessionId: string | null,
+  messages: unknown[],
+): RequestContext {
   return {
     provider: "anthropic",
     apiFormat: "anthropic-messages",
@@ -104,11 +107,17 @@ describe("prune plugin", () => {
     const contents = body.messages.map(
       (m) => (m as { content: string }).content,
     );
-    assert.ok(!contents.includes("Remember 1928"), "pruned message should be gone");
+    assert.ok(
+      !contents.includes("Remember 1928"),
+      "pruned message should be gone",
+    );
     assert.ok(contents.includes("Hi"), "other messages should remain");
     assert.ok(contents.includes("Hello!"), "other messages should remain");
     assert.ok(contents.includes("Got it."), "other messages should remain");
-    assert.ok(contents.includes("What was the number?"), "other messages should remain");
+    assert.ok(
+      contents.includes("What was the number?"),
+      "other messages should remain",
+    );
   });
 
   it("strips tool_use by id", async () => {
@@ -121,13 +130,31 @@ describe("prune plugin", () => {
     const plugin = createPrunePlugin(`http://127.0.0.1:${port}`);
     const ctx = makeCtx(tag, [
       { role: "user", content: "Hi" },
-      { role: "assistant", content: [{ type: "tool_use", id: "toolu_123", name: "Read", input: {} }] },
-      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_123", content: "file contents" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "toolu_123", name: "Read", input: {} },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_123",
+            content: "file contents",
+          },
+        ],
+      },
     ]);
 
     const result = await plugin.onRequest!(ctx);
     const body = result.body as { messages: unknown[] };
-    assert.equal(body.messages.length, 2, "should have removed 1 message (tool_use)");
+    assert.equal(
+      body.messages.length,
+      2,
+      "should have removed 1 message (tool_use)",
+    );
   });
 
   it("strips tool_result by tool_use_id", async () => {
@@ -140,14 +167,28 @@ describe("prune plugin", () => {
     const plugin = createPrunePlugin(`http://127.0.0.1:${port}`);
     const ctx = makeCtx(tag, [
       { role: "user", content: "Hi" },
-      { role: "assistant", content: [{ type: "tool_use", id: "toolu_456", name: "Bash", input: {} }] },
-      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_456", content: "output" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "toolu_456", name: "Bash", input: {} },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "toolu_456", content: "output" },
+        ],
+      },
       { role: "assistant", content: "Done." },
     ]);
 
     const result = await plugin.onRequest!(ctx);
     const body = result.body as { messages: unknown[] };
-    assert.equal(body.messages.length, 3, "should have removed 1 message (tool_result)");
+    assert.equal(
+      body.messages.length,
+      3,
+      "should have removed 1 message (tool_result)",
+    );
   });
 
   it("strips multiple pruned messages", async () => {
@@ -190,9 +231,7 @@ describe("prune plugin", () => {
     port = await startMockServer();
 
     const plugin = createPrunePlugin(`http://127.0.0.1:${port}`);
-    const ctx = makeCtx(null, [
-      { role: "user", content: "Hi" },
-    ]);
+    const ctx = makeCtx(null, [{ role: "user", content: "Hi" }]);
 
     const result = await plugin.onRequest!(ctx);
     const body = result.body as { messages: unknown[] };
@@ -202,9 +241,7 @@ describe("prune plugin", () => {
   it("fails open when server is unreachable", async () => {
     // Don't start mock server — port won't be listening
     const plugin = createPrunePlugin("http://127.0.0.1:19999");
-    const ctx = makeCtx("tag123", [
-      { role: "user", content: "Hi" },
-    ]);
+    const ctx = makeCtx("tag123", [{ role: "user", content: "Hi" }]);
 
     const result = await plugin.onRequest!(ctx);
     const body = result.body as { messages: unknown[] };

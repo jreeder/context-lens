@@ -4,11 +4,8 @@ import { streamSSE } from "hono/streaming";
 import * as v from "valibot";
 
 import { ingestCapture } from "../analysis/ingest.js";
+import { computeFingerprint, extractSessionId } from "../core/conversation.js";
 import { parseContextInfo } from "../core.js";
-import {
-  extractSessionId,
-  computeFingerprint,
-} from "../core/conversation.js";
 import { toLharJson, toLharJsonl } from "../lhar.js";
 import {
   IngestCapturePayloadSchema,
@@ -304,7 +301,10 @@ export function createApiApp(store: Store): Hono {
     }
     try {
       store.addPrunedMessage(convoId, body.messageId);
-      return c.json({ ok: true, prunedMessages: store.getPrunedMessages(convoId) });
+      return c.json({
+        ok: true,
+        prunedMessages: store.getPrunedMessages(convoId),
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: message }, 404);
@@ -317,7 +317,10 @@ export function createApiApp(store: Store): Hono {
     const messageId = decodeURIComponent(c.req.param("messageId"));
     try {
       store.removePrunedMessage(convoId, messageId);
-      return c.json({ ok: true, prunedMessages: store.getPrunedMessages(convoId) });
+      return c.json({
+        ok: true,
+        prunedMessages: store.getPrunedMessages(convoId),
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: message }, 404);
