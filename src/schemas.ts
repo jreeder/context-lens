@@ -194,6 +194,8 @@ export const ConversationLineSchema = v.object({
     workingDirectory: v.nullable(v.string()),
     firstSeen: v.string(),
     sessionId: v.optional(v.nullable(v.string())),
+    tags: v.optional(v.array(v.string())),
+    prunedMessages: v.optional(v.array(v.string())),
   }),
 });
 

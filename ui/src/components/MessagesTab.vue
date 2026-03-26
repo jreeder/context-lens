@@ -6,6 +6,7 @@ import { useExpandable } from '@/composables/useExpandable'
 import { fmtTokens, shortModel } from '@/utils/format'
 import { groupMessagesByCategory, buildToolNameMap, extractPreview, CATEGORY_META, classifyMessageRole, classifyEntries } from '@/utils/messages'
 import { makeRelative, shortFileName } from '@/utils/files'
+import { messageIdAt, isPrunedAt } from '@/utils/prune'
 import type { ParsedMessage, ToolUseBlock, ProjectedEntry } from '@/api-types'
 import DetailPane from '@/components/DetailPane.vue'
 
@@ -13,6 +14,21 @@ const store = useSessionStore()
 const entry = computed(() => store.selectedEntry)
 const session = computed(() => store.selectedSession)
 const { isExpanded, toggle, expand } = useExpandable()
+
+const prunedMessages = computed(() => session.value?.prunedMessages ?? [])
+
+function isMsgPruned(msg: ParsedMessage, origIdx: number): boolean {
+  return isPrunedAt(msg, origIdx, prunedMessages.value)
+}
+
+async function doPrune(msg: ParsedMessage, origIdx: number, e: Event) {
+  e.stopPropagation()
+  const convoId = session.value?.id
+  if (!convoId) return
+  if (isMsgPruned(msg, origIdx)) return
+  const id = messageIdAt(msg, origIdx)
+  await store.pruneMessage(convoId, id)
+}
 const msgListEl = ref<HTMLElement | null>(null)
 const viewMode = ref<'chrono' | 'category'>('chrono')
 
@@ -974,6 +990,7 @@ watch(
                     {
                       selected: !item.future && detailOpen && !isSubagentDetail && flatMessages[detailIndex]?.origIdx === item.origIdx,
                       future: item.future,
+                      pruned: !item.future && isMsgPruned(item.msg, item.origIdx),
                     },
                   ]"
                   :style="{ '--cat-border': chronoCategoryColor(item.msg) }"
@@ -989,6 +1006,12 @@ watch(
                   <span class="chrono-type">{{ chronoCategoryLabel(item.msg) }}</span>
                   <span class="chrono-preview">{{ extractPreview(item.msg, toolNameMap) || '(empty)' }}</span>
                   <span class="chrono-tok" :class="{ hot: !item.future && (item.msg.tokens || 0) > 2000, oversized: !item.future && isOversizedResult(item.msg) }" v-tooltip="!item.future && isOversizedResult(item.msg) ? 'Tool result exceeds 8K tokens — re-sent every turn, crowding conversation history' : undefined">{{ fmtTokens(item.msg.tokens || 0) }}</span>
+                  <button
+                    v-if="!item.future && !isMsgPruned(item.msg, item.origIdx)"
+                    class="prune-btn"
+                    title="Drop from context permanently"
+                    @click.stop="doPrune(item.msg, item.origIdx, $event)"
+                  >✕</button>
                 </div>
               </template>
             </div>
@@ -1357,6 +1380,37 @@ watch(
   flex: 1;
   font-size: var(--text-sm);
   pointer-events: none;
+}
+
+.prune-btn {
+  background: none;
+  border: none;
+  color: var(--text-ghost);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 3px;
+  flex-shrink: 0;
+  opacity: 0.25;
+  transition: opacity 0.1s, color 0.1s;
+  line-height: 1;
+
+  &:hover {
+    opacity: 1;
+    color: var(--accent-red);
+  }
+
+  .chrono-row:hover & {
+    opacity: 0.6;
+  }
+}
+
+.chrono-row {
+  &.pruned {
+    opacity: 0.35;
+    text-decoration: line-through;
+    text-decoration-color: var(--accent-red);
+    text-decoration-thickness: 1px;
+  }
 }
 
 .chrono-tok {

@@ -19,6 +19,7 @@ import { createProxy } from "@contextio/proxy";
 
 import { createCaptureIngestor, createCaptureWriter } from "./capture.js";
 import { loadProxyConfig } from "./config.js";
+import { createPrunePlugin } from "./prune.js";
 
 async function loadRedactPlugin(): Promise<ProxyPlugin | null> {
   const preset = process.env.CONTEXT_LENS_REDACT;
@@ -112,6 +113,18 @@ async function main(): Promise<void> {
     name: "context-lens-capture",
     onCapture,
   };
+
+  // Prune plugin: strip pruned messages before forwarding.
+  // Reads from the analysis server; runs only when an analysis URL is known.
+  const analysisUrl =
+    process.env.CONTEXT_LENS_ANALYSIS_URL ||
+    (config.ingestUrl
+      ? new URL(config.ingestUrl).origin
+      : null);
+  const prunePlugin = analysisUrl ? createPrunePlugin(analysisUrl) : null;
+  if (prunePlugin) {
+    plugins.unshift(prunePlugin);
+  }
 
   const proxy = createProxy({
     port: config.port,

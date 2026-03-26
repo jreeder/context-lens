@@ -146,6 +146,17 @@ export interface Conversation {
   firstSeen: string;
   sessionId?: string | null;
   tags?: string[];
+  /** Stable message IDs permanently excluded from outgoing requests. */
+  prunedMessages?: string[];
+}
+
+/**
+ * Stable identity for a message in the conversation history.
+ * For tool results: the tool_use_id (already unique per call).
+ * For other messages: a hash of role + content prefix.
+ */
+export interface PruneSpec {
+  messageId: string;
 }
 
 // --- Security scanning ---

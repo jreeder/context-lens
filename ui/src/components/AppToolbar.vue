@@ -205,6 +205,11 @@ function onSessionIdKeydown(e: KeyboardEvent) {
       <span v-if="selectedSessionId" class="toolbar-sep"></span>
       <span class="session-stat">{{ summary?.entryCount ?? session.entries.length }} turns</span>
       <span class="session-stat cost">{{ fmtCost(summary?.totalCost ?? 0) }}</span>
+      <span
+        v-if="session.prunedMessages?.length"
+        class="session-stat session-stat--pruned"
+        :title="`${session.prunedMessages.length} message${session.prunedMessages.length !== 1 ? 's' : ''} dropped from context`"
+      >{{ session.prunedMessages.length }} pruned</span>
       <span v-if="summary?.healthScore" class="session-stat">
         Latest health <span class="session-health" :class="{
           good: summary.healthScore.rating === 'good',
@@ -435,6 +440,7 @@ function onSessionIdKeydown(e: KeyboardEvent) {
   flex-shrink: 0;
 
   &.cost { color: var(--accent-green); }
+  &--pruned { color: var(--accent-amber); opacity: 0.8; cursor: default; }
 }
 
 .session-health {

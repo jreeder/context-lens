@@ -89,4 +89,14 @@ export async function removeSessionTag(conversationId: string, tag: string): Pro
   return data.tags
 }
 
+export async function pruneMessage(conversationId: string, messageId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/api/sessions/${encodeURIComponent(conversationId)}/prunes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId }),
+  })
+  if (!res.ok) throw new Error(`POST prune failed: ${res.status}`)
+  const data = await res.json()
+  return data.prunedMessages
+}
 

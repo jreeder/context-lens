@@ -5,6 +5,10 @@ import * as v from "valibot";
 
 import { ingestCapture } from "../analysis/ingest.js";
 import { parseContextInfo } from "../core.js";
+import {
+  extractSessionId,
+  computeFingerprint,
+} from "../core/conversation.js";
 import { toLharJson, toLharJsonl } from "../lhar.js";
 import {
   IngestCapturePayloadSchema,
@@ -99,8 +103,9 @@ function buildFullConversation(
     firstSeen: sorted[sorted.length - 1].timestamp,
   };
 
-  // Get tags for this conversation
+  // Get tags and prune list for this conversation
   const tags = store.getTags(id);
+  const prunedMessages = store.getPrunedMessages(id);
 
   const agentMap = new Map<string, CapturedEntry[]>();
   for (const e of sorted) {
@@ -125,6 +130,7 @@ function buildFullConversation(
   return {
     ...meta,
     tags,
+    prunedMessages,
     agents,
     entries: sorted.map(projectEntryForApi),
   };
@@ -278,6 +284,86 @@ export function createApiApp(store: Store): Hono {
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: message }, 404);
     }
+  });
+
+  // --- Context pruning ---
+
+  /** Get pruned message IDs for a session (called by the proxy). */
+  app.get("/api/sessions/:id/prunes", (c) => {
+    const convoId = decodeURIComponent(c.req.param("id"));
+    const pruned = store.getPrunedMessages(convoId);
+    return c.json({ prunedMessages: pruned });
+  });
+
+  /** Permanently prune a message from a session. */
+  app.post("/api/sessions/:id/prunes", async (c) => {
+    const convoId = decodeURIComponent(c.req.param("id"));
+    const body = await c.req.json<{ messageId: string }>();
+    if (!body?.messageId || typeof body.messageId !== "string") {
+      return c.json({ error: "messageId required" }, 400);
+    }
+    try {
+      store.addPrunedMessage(convoId, body.messageId);
+      return c.json({ ok: true, prunedMessages: store.getPrunedMessages(convoId) });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: message }, 404);
+    }
+  });
+
+  /** Restore (un-prune) a previously pruned message. */
+  app.delete("/api/sessions/:id/prunes/:messageId", (c) => {
+    const convoId = decodeURIComponent(c.req.param("id"));
+    const messageId = decodeURIComponent(c.req.param("messageId"));
+    try {
+      store.removePrunedMessage(convoId, messageId);
+      return c.json({ ok: true, prunedMessages: store.getPrunedMessages(convoId) });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: message }, 404);
+    }
+  });
+
+  /**
+   * Proxy prune lookup: accepts a raw request body, identifies the
+   * conversation using the same fingerprinting logic as the store,
+   * and returns the prune list. Called by the proxy plugin on every
+   * outgoing request.
+   */
+  app.post("/api/prune-lookup", async (c) => {
+    const body = await c.req.json<Record<string, unknown>>();
+    if (!body) return c.json({ prunedMessages: [] });
+
+    // Try session ID first (Anthropic metadata.user_id)
+    const sessionId = extractSessionId(body);
+    let conversationId: string | null = null;
+    if (sessionId) {
+      const { createHash } = await import("node:crypto");
+      conversationId = createHash("sha256")
+        .update(sessionId)
+        .digest("hex")
+        .slice(0, 16);
+    }
+
+    // Fall back to fingerprint matching against known conversations
+    if (!conversationId) {
+      const conversations = store.getConversations();
+      // Quick match: find a conversation whose last request has the same
+      // system prompt + first user message fingerprint
+      const ci = parseContextInfo("anthropic", body, "anthropic-messages");
+      const fp = computeFingerprint(ci, body, new Map(), null, null);
+      if (fp) {
+        for (const [id, _convo] of conversations) {
+          if (id === fp) {
+            conversationId = id;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!conversationId) return c.json({ prunedMessages: [] });
+    return c.json({ prunedMessages: store.getPrunedMessages(conversationId) });
   });
 
   // --- Requests (summary + full) ---

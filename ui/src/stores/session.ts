@@ -19,6 +19,7 @@ import {
   setSessionTags,
   addSessionTag,
   removeSessionTag,
+  pruneMessage as apiPruneMessage,
 } from '@/api'
 import type { TagInfo } from '@/api-types'
 import { classifyEntries } from '@/utils/messages'
@@ -568,6 +569,20 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Context pruning
+  // ---------------------------------------------------------------------------
+
+  async function pruneMessage(conversationId: string, messageId: string) {
+    try {
+      const pruned = await apiPruneMessage(conversationId, messageId)
+      const loaded = loadedConversations.value.get(conversationId)
+      if (loaded) loaded.prunedMessages = pruned
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
   // Return a CSS color class for a tag based on its position in the list.
   // Positional coloring guarantees no two adjacent tags share a color.
   function getTagColorClass(index: number): string {
@@ -659,6 +674,7 @@ export const useSessionStore = defineStore('session', () => {
     updateSessionTags,
     addTagToSession,
     removeTagFromSession,
+    pruneMessage,
     getTagColorClass,
   }
 })

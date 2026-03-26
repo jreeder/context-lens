@@ -1169,6 +1169,52 @@ export class Store {
   getAllTags(): Map<string, number> {
     return this.tagsStore.getAllTags();
   }
+
+  // ---------------------------------------------------------------------------
+  // Context pruning
+  // ---------------------------------------------------------------------------
+
+  getPrunedMessages(conversationId: string): string[] {
+    return this.conversations.get(conversationId)?.prunedMessages ?? [];
+  }
+
+  addPrunedMessage(conversationId: string, messageId: string): void {
+    const convo = this.conversations.get(conversationId);
+    if (!convo) throw new Error(`Conversation not found: ${conversationId}`);
+    const existing = convo.prunedMessages ?? [];
+    if (existing.includes(messageId)) return; // already pruned
+    convo.prunedMessages = [...existing, messageId];
+    this.dataRevision++;
+    // Persist the updated conversation row (prunedMessages is part of it)
+    this.appendPruneEvent(conversationId);
+    this.emitChange("session-updated", conversationId);
+  }
+
+  removePrunedMessage(conversationId: string, messageId: string): void {
+    const convo = this.conversations.get(conversationId);
+    if (!convo) throw new Error(`Conversation not found: ${conversationId}`);
+    const existing = convo.prunedMessages ?? [];
+    convo.prunedMessages = existing.filter((id) => id !== messageId);
+    this.dataRevision++;
+    this.appendPruneEvent(conversationId);
+    this.emitChange("session-updated", conversationId);
+  }
+
+  private appendPruneEvent(conversationId: string): void {
+    const convo = this.conversations.get(conversationId);
+    if (!convo) return;
+    try {
+      fs.appendFileSync(
+        this.stateFile,
+        `${JSON.stringify({ type: "conversation", data: convo })}\n`,
+      );
+    } catch (err: unknown) {
+      console.error(
+        "Prune state append error:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
 }
 
 /**

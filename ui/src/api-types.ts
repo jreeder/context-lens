@@ -234,6 +234,7 @@ export interface Conversation {
   firstSeen: string;
   sessionId?: string | null;
   tags?: string[];
+  prunedMessages?: string[];
 }
 
 export interface AgentGroup {
