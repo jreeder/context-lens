@@ -2,7 +2,7 @@
 import { computed, ref, watch, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { fmtCost, shortModel, sourceBadgeClass } from '@/utils/format'
-import { getExportUrl, uploadToContextlensIo } from '@/api'
+import { getExportUrl, uploadToContextlensIo, deleteSharedSession } from '@/api'
 import TagEditor from '@/components/TagEditor.vue'
 import PasteModal from '@/components/PasteModal.vue'
 import { scanImport } from '@/api'
@@ -67,6 +67,7 @@ const showResetMenu = ref(false)
 const sessionIdCopied = ref(false)
 const uploading = ref(false)
 const uploadError = ref<string | null>(null)
+const deleting = ref(false)
 
 // Shared mode: expiry countdown
 const now = ref(Date.now())
@@ -152,6 +153,23 @@ async function handleExport(format: 'lhar' | 'lhar.json', scope: 'all' | 'sessio
     window.open(url, '_blank')
   }
   showExportMenu.value = false
+}
+
+async function handleDelete() {
+  if (!confirm('Delete this shared session? The link will stop working immediately.')) return
+  deleting.value = true
+  try {
+    // Extract session ID from the current URL path: /s/:id
+    const match = window.location.pathname.match(/^\/s\/([0-9a-f]+)/)
+    if (!match) throw new Error('Could not determine session ID from URL')
+    await deleteSharedSession(match[1])
+    alert('Session deleted.')
+    window.location.href = 'https://contextlens.io'
+  } catch (err) {
+    alert(`Delete failed: ${(err as Error).message}`)
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function handleUpload() {
@@ -339,6 +357,9 @@ function onSessionIdKeydown(e: KeyboardEvent) {
         <i class="i-carbon-share" />
         Shared{{ sharedExpiryDays !== null ? ` · ${sharedExpiryDays}d left` : '' }}
       </span>
+      <button v-if="store.isSharedMode" class="toolbar-control toolbar-control--danger" :disabled="deleting" @click="handleDelete">
+        <i class="i-carbon-trash-can" /> {{ deleting ? 'Deleting…' : 'Delete' }}
+      </button>
       <span v-else class="connection" :class="{ live: store.connected }">
         <span class="connection-dot" />
         {{ store.connected ? 'Live' : 'Offline' }}

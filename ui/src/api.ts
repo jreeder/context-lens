@@ -95,7 +95,8 @@ export interface UploadResult {
   summary: string
 }
 
-const CONTEXTLENS_IO_UPLOAD_URL = 'https://contextlens.io/api/upload'
+const CONTEXTLENS_IO_BASE = 'https://contextlens.io'
+const CONTEXTLENS_IO_UPLOAD_URL = `${CONTEXTLENS_IO_BASE}/api/upload`
 
 /**
  * Upload a session's LHAR export to contextlens.io.
@@ -128,6 +129,18 @@ export async function uploadToContextlensIo(
 }
 
 // --- Tags ---
+
+/**
+ * Delete a shared session from contextlens.io by its ID.
+ * The session ID is extracted from the current share URL.
+ */
+export async function deleteSharedSession(sessionId: string): Promise<void> {
+  const res = await fetch(`${CONTEXTLENS_IO_BASE}/s/${sessionId}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+    throw new Error(err.error ?? `Delete failed: ${res.status}`)
+  }
+}
 
 export async function fetchTags(): Promise<TagsResponse> {
   const res = await fetch(`${BASE}/api/tags`)
