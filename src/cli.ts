@@ -77,6 +77,18 @@ if (parsedArgs.commandName === "analyze") {
     (exitCode) => process.exit(exitCode),
   );
 } else if (!parsedArgs.commandName) {
+  // Warn if PI_CODING_AGENT_DIR is set in the environment but no command was
+  // given. The user likely expected this to launch pi — point them to the
+  // correct invocation before dropping into standalone mode.
+  if (process.env.PI_CODING_AGENT_DIR) {
+    console.error(
+      "Warning: PI_CODING_AGENT_DIR is set but no command was given.",
+    );
+    console.error("To capture pi traffic, run: context-lens pi [pi-args...]");
+    console.error(
+      "Starting standalone mode (proxy + analysis server) instead.",
+    );
+  }
   if (parsedArgs.noUi) {
     // Standalone mode (no UI): start proxy only
     const proxyPath = join(__dirname, "proxy", "server.js");
@@ -547,10 +559,19 @@ if (parsedArgs.commandName === "analyze") {
     childProcess.on("error", (err) => {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         console.error(`\nFailed to start '${commandName}': command not found.`);
-        console.error(
-          "Try a known tool (claude, codex, gemini, aider, pi) or use:",
-        );
-        console.error("  context-lens -- <your-command> [args...]");
+        if (commandName === "pi") {
+          console.error(
+            "Install pi: npm install -g @mariozechner/pi-coding-agent",
+          );
+          console.error(
+            "Or run from its directory: context-lens -- node dist/cli.js",
+          );
+        } else {
+          console.error(
+            "Try a known tool (claude, codex, gemini, aider, pi) or use:",
+          );
+          console.error("  context-lens -- <your-command> [args...]");
+        }
         cleanup(127);
         return;
       }
