@@ -176,10 +176,12 @@ function parseStreamingUsage(
         result.thinkingTokens =
           parsed.usage.reasoning_tokens || result.thinkingTokens;
         if (parsed.usage.completion_tokens_details?.reasoning_tokens) {
-          result.thinkingTokens = parsed.usage.completion_tokens_details.reasoning_tokens;
+          result.thinkingTokens =
+            parsed.usage.completion_tokens_details.reasoning_tokens;
         }
         if (parsed.usage.prompt_tokens_details?.cached_tokens) {
-          result.cacheReadTokens = parsed.usage.prompt_tokens_details.cached_tokens;
+          result.cacheReadTokens =
+            parsed.usage.prompt_tokens_details.cached_tokens;
         }
       }
       if (parsed.choices?.[0]?.finish_reason) {
