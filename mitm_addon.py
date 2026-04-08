@@ -27,6 +27,10 @@ import time
 import urllib.request
 from mitmproxy import http
 
+# WebSocket state: keyed by flow id, stores pending request bodies
+# so we can pair response.create (client) with response.completed (server).
+_ws_pending: dict[str, dict] = {}
+
 INGEST_URL = os.environ.get("CONTEXT_LENS_INGEST_URL", "http://localhost:4041/api/ingest")
 CONTEXT_LENS_SESSION_ID = os.environ.get("CONTEXT_LENS_SESSION_ID", "").strip()
 
@@ -114,8 +118,91 @@ def _parse_sse_response(text: str) -> str:
     return text
 
 
+def _is_codex_ws(flow: http.HTTPFlow) -> bool:
+    """Check if this WebSocket connection is a Codex responses stream."""
+    return (
+        "chatgpt.com" in flow.request.pretty_host
+        and "/backend-api/codex/responses" in flow.request.path
+    )
+
+
+def websocket_message(flow: http.HTTPFlow):
+    """Capture Codex WebSocket messages (response.create / response.completed).
+
+    Codex v0.118+ switched from HTTP POST+SSE to a persistent WebSocket.
+    The client sends `response.create` with the full request body, and the
+    server streams back deltas then sends `response.completed` with the full
+    response object including usage.  We pair these two and synthesize a
+    capture that looks like a normal HTTP POST / JSON response so the
+    analysis server can process it with the existing responses parser.
+    """
+    if not _is_codex_ws(flow):
+        return
+    assert flow.websocket is not None
+    msg = flow.websocket.messages[-1]
+    try:
+        data = json.loads(msg.text or msg.content)
+    except (json.JSONDecodeError, TypeError):
+        return
+
+    msg_type = data.get("type", "")
+    fid = flow.id
+
+    if msg.from_client and msg_type == "response.create":
+        # Store the request body for pairing with the completed response.
+        _ws_pending[fid] = data
+        return
+
+    if not msg.from_client and msg_type == "response.completed":
+        request_data = _ws_pending.pop(fid, None)
+        if not request_data:
+            return
+
+        response_obj = data.get("response", {})
+        source = CONTEXT_LENS_SOURCE or "codex"
+
+        # Build a synthetic capture matching the HTTP ingest format.
+        capture = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+            "method": "POST",
+            "path": flow.request.path,
+            "source": source,
+            "provider": "chatgpt",
+            "apiFormat": "responses",
+            "targetUrl": flow.request.pretty_url,
+            "requestHeaders": {},
+            "requestBody": request_data,
+            "requestBytes": len(json.dumps(request_data)),
+            "responseStatus": 200,
+            "responseHeaders": {"content-type": "application/json"},
+            "responseBody": json.dumps(response_obj),
+            "responseIsStreaming": False,
+            "responseBytes": len(json.dumps(response_obj)),
+            "sessionId": _resolve_session_id(flow),
+            "timings": {
+                "send_ms": 0,
+                "wait_ms": 0,
+                "receive_ms": 0,
+                "total_ms": 0,
+            },
+        }
+
+        payload = json.dumps(capture).encode()
+        try:
+            req = urllib.request.Request(
+                INGEST_URL,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=5)
+            model = request_data.get("model", "unknown")
+            print(f"[context-lens] Captured WS {source}/codex request (model={model})")
+        except Exception as e:
+            print(f"[context-lens] Failed to ingest WS capture: {e}")
+
+
 def response(flow: http.HTTPFlow):
-    """Called when a response is received."""
+    """Called when an HTTP response is received (non-WebSocket)."""
     if flow.request.method != "POST":
         return
 
