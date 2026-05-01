@@ -80,6 +80,11 @@ export function ingestCapture(store: Store, capture: CaptureData): void {
   };
 
   // Feed into the store (which handles fingerprinting, scoring, etc.)
+  // `contextLimit` is written by the litellm logger but not part of the
+  // CaptureData type, so we access it via a cast. When present it takes
+  // precedence over the static @contextio/core lookup so that proxy-defined
+  // models (custom aliases, bedrock/google routes) get the correct 200k limit.
+  const contextLimitOverride = (capture as any).contextLimit as number | undefined;
   store.storeRequest(
     contextInfo,
     responseData,
@@ -92,5 +97,6 @@ export function ingestCapture(store: Store, capture: CaptureData): void {
     meta,
     capture.requestHeaders,
     capture.sessionId ?? null,
+    contextLimitOverride,
   );
 }

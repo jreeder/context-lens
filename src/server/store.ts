@@ -257,6 +257,7 @@ export class Store {
     meta?: RequestMeta,
     requestHeaders?: Record<string, string>,
     sessionId?: string | null,
+    contextLimitOverride?: number,
   ): CapturedEntry {
     const resolvedSource = detectSource(contextInfo, source, requestHeaders);
     const workingDirectory = extractWorkingDirectory(
@@ -446,7 +447,7 @@ export class Store {
       timestamp: new Date().toISOString(),
       contextInfo,
       response: responseData,
-      contextLimit: getContextLimit(contextInfo.model),
+      contextLimit: (contextLimitOverride && contextLimitOverride > 0) ? contextLimitOverride : getContextLimit(contextInfo.model),
       source: resolvedSource || "unknown",
       conversationId,
       agentKey,
@@ -727,6 +728,7 @@ export class Store {
         usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
       if (actual > 0 && actual !== entry.contextInfo.totalTokens) {
         rescaleContextTokens(entry.contextInfo, actual);
+        normalizeComposition(entry.composition, actual);
         fixed++;
       }
     }

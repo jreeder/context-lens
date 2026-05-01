@@ -79,6 +79,11 @@ export function parseResponseUsage(responseData: any): ParsedResponseUsage {
     result.cacheReadTokens = u.cache_read_input_tokens || 0;
     result.cacheWriteTokens = u.cache_creation_input_tokens || 0;
     result.thinkingTokens = u.thinking_tokens || u.reasoning_tokens || 0;
+    // OpenAI/LiteLLM chat-completions format: prompt_tokens is total (inclusive of cache).
+    // Anthropic native format: input_tokens is fresh-only and must NOT be subtracted from.
+    if (!u.input_tokens && u.prompt_tokens) {
+      result.inputTokens -= result.cacheReadTokens + result.cacheWriteTokens;
+    }
     if (u.completion_tokens_details?.reasoning_tokens) {
       result.thinkingTokens = u.completion_tokens_details.reasoning_tokens;
     }
@@ -154,6 +159,7 @@ function parseStreamingUsage(
             parsed.message.usage.cache_read_input_tokens || 0;
           result.cacheWriteTokens =
             parsed.message.usage.cache_creation_input_tokens || 0;
+          // Streaming Anthropic message_start always uses native input_tokens (fresh-only); no subtraction needed.
         }
       }
 

@@ -204,7 +204,7 @@ export function parseContextInfo(
 
   const model = info.model;
 
-  if (provider === "anthropic") {
+  if (provider === "anthropic" && apiFormat !== "chat-completions") {
     if (body.system) {
       const systemText =
         typeof body.system === "string"
@@ -361,7 +361,7 @@ export function parseContextInfo(
       });
       info.messagesTokens = info.messages.reduce((sum, m) => sum + m.tokens, 0);
     }
-  } else if (provider === "openai") {
+  } else if (provider === "openai" || apiFormat === "chat-completions") {
     if (body.messages && Array.isArray(body.messages)) {
       body.messages.forEach((msg: any) => {
         if (msg.role === "system" || msg.role === "developer") {

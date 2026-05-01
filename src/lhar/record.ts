@@ -167,10 +167,22 @@ export function buildLharRecord(
         finish_reasons: usage.finishReasons,
       },
       usage: {
-        input_tokens: usage.inputTokens || ci.totalTokens,
+        // When the API returns real usage data (output > 0 or cache tokens > 0),
+        // use the parsed inputTokens directly (may be 0 for fully-cached calls).
+        // Only fall back to ci.totalTokens when there is no API usage data at all.
+        input_tokens:
+          usage.outputTokens > 0 ||
+          usage.cacheReadTokens > 0 ||
+          usage.cacheWriteTokens > 0
+            ? usage.inputTokens
+            : ci.totalTokens,
         output_tokens: usage.outputTokens,
         total_tokens:
-          (usage.inputTokens || ci.totalTokens) + usage.outputTokens,
+          (usage.outputTokens > 0 ||
+          usage.cacheReadTokens > 0 ||
+          usage.cacheWriteTokens > 0
+            ? usage.inputTokens
+            : ci.totalTokens) + usage.outputTokens,
       },
     },
 
