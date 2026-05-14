@@ -447,7 +447,10 @@ export class Store {
       timestamp: new Date().toISOString(),
       contextInfo,
       response: responseData,
-      contextLimit: (contextLimitOverride && contextLimitOverride > 0) ? contextLimitOverride : getContextLimit(contextInfo.model),
+      contextLimit:
+        contextLimitOverride && contextLimitOverride > 0
+          ? contextLimitOverride
+          : getContextLimit(contextInfo.model),
       source: resolvedSource || "unknown",
       conversationId,
       agentKey,

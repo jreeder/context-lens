@@ -720,6 +720,39 @@ describe("parseResponseUsage", () => {
     assert.deepEqual(usage.finishReasons, ["stop"]);
   });
 
+  it("correctly subtracts cache tokens from inputTokens when only prompt_tokens_details is present (OpenAI/litellm non-streaming)", () => {
+    // litellm proxying OpenAI or Google models: prompt_tokens is total (inclusive of cache),
+    // cache appears only in prompt_tokens_details.cached_tokens (no cache_read_input_tokens).
+    const resp = {
+      model: "gpt-4o",
+      choices: [{ finish_reason: "stop", message: { content: "Hello" } }],
+      usage: {
+        prompt_tokens: 1000,
+        completion_tokens: 100,
+        prompt_tokens_details: { cached_tokens: 800 },
+      },
+    };
+    const usage = parseResponseUsage(resp);
+    assert.equal(usage.inputTokens, 200); // 1000 - 800
+    assert.equal(usage.cacheReadTokens, 800);
+    assert.equal(usage.outputTokens, 100);
+  });
+
+  it("correctly subtracts cache tokens from inputTokens in OpenAI/litellm streaming with prompt_tokens_details", () => {
+    // litellm proxying any model via chat-completions streaming format.
+    const chunks = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hello"}}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":100,"prompt_tokens_details":{"cached_tokens":800}}}',
+      "data: [DONE]",
+    ].join("\n");
+    const usage = parseResponseUsage({ streaming: true, chunks });
+    assert.equal(usage.stream, true);
+    assert.equal(usage.inputTokens, 200); // 1000 - 800
+    assert.equal(usage.cacheReadTokens, 800);
+    assert.equal(usage.outputTokens, 100);
+    assert.deepEqual(usage.finishReasons, ["stop"]);
+  });
+
   it("ignores [DONE] sentinel in streaming chunks", () => {
     const chunks = [
       'data: {"type":"message_start","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":50}}}',

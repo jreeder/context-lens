@@ -76,7 +76,10 @@ export function parseResponseUsage(responseData: any): ParsedResponseUsage {
     const u = responseData.usage;
     result.inputTokens = u.input_tokens || u.prompt_tokens || 0;
     result.outputTokens = u.output_tokens || u.completion_tokens || 0;
-    result.cacheReadTokens = u.cache_read_input_tokens || 0;
+    // Prefer Anthropic's native field; fall back to OpenAI's prompt_tokens_details.
+    // Must be resolved before the chat-completions subtraction below.
+    result.cacheReadTokens =
+      u.cache_read_input_tokens || u.prompt_tokens_details?.cached_tokens || 0;
     result.cacheWriteTokens = u.cache_creation_input_tokens || 0;
     result.thinkingTokens = u.thinking_tokens || u.reasoning_tokens || 0;
     // OpenAI/LiteLLM chat-completions format: prompt_tokens is total (inclusive of cache).
@@ -86,9 +89,6 @@ export function parseResponseUsage(responseData: any): ParsedResponseUsage {
     }
     if (u.completion_tokens_details?.reasoning_tokens) {
       result.thinkingTokens = u.completion_tokens_details.reasoning_tokens;
-    }
-    if (u.prompt_tokens_details?.cached_tokens) {
-      result.cacheReadTokens = u.prompt_tokens_details.cached_tokens;
     }
   }
 
@@ -189,6 +189,8 @@ function parseStreamingUsage(
           result.cacheReadTokens =
             parsed.usage.prompt_tokens_details.cached_tokens;
         }
+        // prompt_tokens is total (inclusive of cache); subtract to get fresh-only.
+        result.inputTokens -= result.cacheReadTokens;
       }
       if (parsed.choices?.[0]?.finish_reason) {
         result.finishReasons = [parsed.choices[0].finish_reason];
